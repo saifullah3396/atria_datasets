@@ -3,5 +3,5 @@
 set -e
 set -x
 
-ruff check src --fix     # linter
-ruff format src --check # formatter
+uv run ruff check src --fix     # linter
+uv run ruff format src --check # formatter
