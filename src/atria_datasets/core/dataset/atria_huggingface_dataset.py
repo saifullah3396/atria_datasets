@@ -32,7 +32,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic
 
 from atria_core.logger import get_logger
-from atria_core.types import DatasetMetadata, DatasetSplitType, SplitConfig
+from atria_core.types import (
+    DatasetMetadata,
+    DatasetSplitType,
+    DocumentInstance,
+    ImageInstance,
+    SplitConfig,
+)
 
 from atria_datasets.core.constants import _DEFAULT_DOWNLOAD_PATH
 from atria_datasets.core.dataset.atria_dataset import AtriaDataset
@@ -187,3 +193,21 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         yield from self._prepare_dataset_builder(data_dir)._as_streaming_dataset_single(
             hf_split_generator
         )
+
+
+class AtriaHuggingfaceImageDataset(AtriaHuggingfaceDataset[ImageInstance]):
+    """
+    AtriaImageDataset is a specialized dataset class for handling image datasets.
+    It inherits from AtriaDataset and provides additional functionality specific to image data.
+    """
+
+    __data_model__ = ImageInstance
+
+
+class AtriaHuggingfaceDocumentDataset(AtriaHuggingfaceDataset[DocumentInstance]):
+    """
+    AtriaDocumentDataset is a specialized dataset class for handling document datasets.
+    It inherits from AtriaDataset and provides additional functionality specific to document data.
+    """
+
+    __data_model__ = DocumentInstance

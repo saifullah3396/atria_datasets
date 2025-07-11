@@ -26,6 +26,8 @@ from atria_datasets.core.dataset.atria_dataset import (
 )
 from atria_datasets.core.dataset.atria_huggingface_dataset import (
     AtriaHuggingfaceDataset,
+    AtriaHuggingfaceDocumentDataset,
+    AtriaHuggingfaceImageDataset,
 )
 from atria_datasets.core.dataset.split_iterator import SplitIterator
 from atria_datasets.core.dataset_splitters.standard_splitter import StandardSplitter
@@ -68,6 +70,8 @@ __all__ = [
     "AtriaImageDataset",
     "AtriaDocumentDataset",
     "AtriaHuggingfaceDataset",
+    "AtriaHuggingfaceImageDataset",
+    "AtriaHuggingfaceDocumentDataset",
     "SplitIterator",
     "StandardSplitter",
     "DownloadManager",
