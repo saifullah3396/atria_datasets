@@ -1,5 +1,7 @@
 from collections.abc import Sequence
 
+import pandas as pd
+
 from atria_datasets.core.typing.common import T_BaseDataInstance
 
 
@@ -22,6 +24,12 @@ class DeltalakeReader(Sequence[T_BaseDataInstance]):
                 for col in self.df.columns
                 if col.startswith(tuple(self.allowed_keys))
             }
+
+    def dataframe(self) -> pd.DataFrame:
+        """
+        Displays the dataset split information in a rich format.
+        """
+        return self.df
 
     def __len__(self) -> int:
         return len(self.df)

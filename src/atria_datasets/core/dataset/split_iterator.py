@@ -30,6 +30,7 @@ License: MIT
 
 import inspect
 from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
+from typing import TYPE_CHECKING
 
 import rich
 import rich.pretty
@@ -40,6 +41,9 @@ from atria_core.utilities.repr import RepresentationMixin
 from atria_datasets.core.dataset.instance_transform import InstanceTransform
 from atria_datasets.core.typing.common import T_BaseDataInstance
 
+if TYPE_CHECKING:
+    import pandas as pd
+
 logger = get_logger(__name__)
 
 
@@ -48,7 +52,7 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
         self,
         split: DatasetSplitType,
         base_iterator: Sequence | Generator,
-        data_model: T_BaseDataInstance,
+        data_model: type[T_BaseDataInstance],
         input_transform: Callable,
         output_transform: Callable | None = None,
         max_len: int | None = None,
@@ -121,6 +125,17 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
 
     def enable_output_transform(self) -> None:
         self._apply_output_transform = True
+
+    def dataframe(self) -> "pd.DataFrame":
+        """
+        Displays the dataset split information in a rich format.
+        """
+        if hasattr(self._base_iterator, "dataframe"):
+            return self._base_iterator.dataframe()
+        else:
+            raise RuntimeError(
+                "This dataset is not backed by a DataFrame or does not support dataframe representation."
+            )
 
     def __iter__(self) -> Iterator[T_BaseDataInstance]:
         if self._is_generator:

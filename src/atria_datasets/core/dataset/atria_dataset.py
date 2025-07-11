@@ -31,19 +31,27 @@ License: MIT
 from abc import abstractmethod
 from collections.abc import Callable, Generator, Sequence
 from pathlib import Path
-from typing import Any, Generic, Union
+from typing import Any, Generic, cast
 
 import rich
 import rich.pretty
 from atria_core.constants import _DEFAULT_ATRIA_DATASETS_CACHE_DIR
 from atria_core.logger import get_logger
-from atria_core.types import DatasetMetadata, DatasetSplitType, SplitConfig
+from atria_core.types import (
+    BaseDataInstance,
+    DatasetMetadata,
+    DatasetSplitType,
+    DocumentInstance,
+    ImageInstance,
+    SplitConfig,
+)
 from atria_core.utilities.repr import RepresentationMixin
 from atria_registry.constants import _PROVIDER_NAME
 from atria_registry.registry_config_mixin import RegistryConfigMixin
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 
 from atria_datasets.core.constants import _DEFAULT_DOWNLOAD_PATH
+from atria_datasets.core.dataset.exceptions import SplitNotFoundError
 from atria_datasets.core.dataset.split_iterator import SplitIterator
 from atria_datasets.core.storage.utilities import FileStorageType
 from atria_datasets.core.typing.common import T_BaseDataInstance
@@ -75,6 +83,7 @@ class AtriaDataset(
         _download_manager (DownloadManager): The download manager for the dataset.
     """
 
+    __data_model__ = BaseDataInstance
     __default_config_path__ = "conf/dataset/config.yaml"
     __default_metadata_path__ = "metadata.yaml"
 
@@ -172,14 +181,14 @@ class AtriaDataset(
         return metadata
 
     @property
-    def data_model(self) -> T_BaseDataInstance:
+    def data_model(self) -> type[T_BaseDataInstance]:
         """
         Returns the data model class for the dataset.
 
         Returns:
-            T_BaseDataInstance: The data model class.
+            type[T_BaseDataInstance]: The data model class.
         """
-        return self._data_model()
+        return self.__data_model__
 
     @property
     def data_dir(self) -> Path:
@@ -241,8 +250,9 @@ class AtriaDataset(
         )
         upload_to_hub(dataset=self, name=name, branch=branch, is_public=is_public)
 
-    @staticmethod
+    @classmethod
     def load_from_registry(
+        cls,
         name: str,
         split: DatasetSplitType | None = None,
         config_name: str | None = None,
@@ -254,22 +264,23 @@ class AtriaDataset(
         overwrite_existing_cached: bool = False,
         overwrite_existing_shards: bool = False,
         allowed_keys: set[str] | None = None,
-        return_config: bool = False,
         build_kwargs: dict[str, Any] | None = None,
         sharded_storage_kwargs: dict[str, Any] | None = None,
-    ) -> Union[  # noqa: UP007
-        "AtriaDataset[T_BaseDataInstance]",
-        tuple["AtriaDataset[T_BaseDataInstance]", str, DictConfig],
-    ]:
-        from atria_registry import DATASET
+    ) -> "AtriaDataset[T_BaseDataInstance]":
+        from atria_datasets import DATASET
 
         module_name = f"{name}/{config_name}" if config_name is not None else name
         logger.info(f"Loading dataset {module_name} from registry.")
-        dataset, config_path, config = DATASET.load_from_registry(
+        dataset: AtriaDataset[T_BaseDataInstance] = DATASET.load_from_registry(
             module_name=module_name,
             provider=provider,
-            return_config=True,
+            return_config=False,
             **(build_kwargs if build_kwargs else {}),
+        )
+        assert dataset.__data_model__ == cls.__data_model__, (
+            "The data model of the loaded dataset does not match the expected data model. "
+            f"Expected: {cls.__data_model__}, "
+            f"Got: {dataset.__data_model__}."
         )
         dataset.build_split(
             split=split,
@@ -282,9 +293,7 @@ class AtriaDataset(
             allowed_keys=allowed_keys,
             **(sharded_storage_kwargs if sharded_storage_kwargs else {}),
         )
-        if return_config:
-            return dataset, config_path, config
-        return dataset
+        return cast(AtriaDataset[T_BaseDataInstance], dataset)
 
     def build_split(
         self,
@@ -687,30 +696,21 @@ class AtriaDataset(
             "Subclasses must implement the `_split_iterator` method."
         )
 
-    @abstractmethod
-    def _data_model(self) -> T_BaseDataInstance:
-        """
-        Returns the data model class for the dataset.
-
-        Returns:
-            T_BaseDataInstance: The data model class.
-        """
-        raise NotImplementedError(
-            "Subclasses must implement the `data_model` property."
-        )
-
     @property
-    def train(self) -> SplitIterator | None:
+    def train(self) -> SplitIterator[T_BaseDataInstance]:
         """
         Returns the training split iterator.
 
         Returns:
             SplitIterator: The training split iterator.
         """
-        return self._split_iterators.get(DatasetSplitType.train, None)
+        split = self._split_iterators.get(DatasetSplitType.train, None)
+        if split is None:
+            raise SplitNotFoundError(DatasetSplitType.train.value)
+        return split
 
     @train.setter
-    def train(self, value: SplitIterator) -> None:
+    def train(self, value: SplitIterator[T_BaseDataInstance]) -> None:
         """
         Sets the training split iterator.
 
@@ -720,17 +720,20 @@ class AtriaDataset(
         self._split_iterators[DatasetSplitType.train] = value
 
     @property
-    def validation(self) -> SplitIterator | None:
+    def validation(self) -> SplitIterator[T_BaseDataInstance]:
         """
         Returns the validation split iterator.
 
         Returns:
             SplitIterator: The validation split iterator.
         """
-        return self._split_iterators.get(DatasetSplitType.validation, None)
+        split = self._split_iterators.get(DatasetSplitType.validation, None)
+        if split is None:
+            raise SplitNotFoundError(DatasetSplitType.validation.value)
+        return split
 
     @validation.setter
-    def validation(self, value: SplitIterator) -> None:
+    def validation(self, value: SplitIterator[T_BaseDataInstance]) -> None:
         """
         Sets the validation split iterator.
 
@@ -740,17 +743,20 @@ class AtriaDataset(
         self._split_iterators[DatasetSplitType.validation] = value
 
     @property
-    def test(self) -> SplitIterator | None:
+    def test(self) -> SplitIterator[T_BaseDataInstance] | None:
         """
         Returns the test split iterator.
 
         Returns:
             SplitIterator: The test split iterator.
         """
-        return self._split_iterators.get(DatasetSplitType.test, None)
+        split = self._split_iterators.get(DatasetSplitType.test, None)
+        if split is None:
+            raise SplitNotFoundError(DatasetSplitType.test.value)
+        return split
 
     @test.setter
-    def test(self, value: SplitIterator) -> None:
+    def test(self, value: SplitIterator[T_BaseDataInstance]) -> None:
         """
         Sets the test split iterator.
 
@@ -758,3 +764,21 @@ class AtriaDataset(
             value (SplitIterator): The test split iterator to set.
         """
         self._split_iterators[DatasetSplitType.test] = value
+
+
+class AtriaImageDataset(AtriaDataset[ImageInstance]):
+    """
+    AtriaImageDataset is a specialized dataset class for handling image datasets.
+    It inherits from AtriaDataset and provides additional functionality specific to image data.
+    """
+
+    __data_model__ = ImageInstance
+
+
+class AtriaDocumentDataset(AtriaDataset[DocumentInstance]):
+    """
+    AtriaDocumentDataset is a specialized dataset class for handling document datasets.
+    It inherits from AtriaDataset and provides additional functionality specific to document data.
+    """
+
+    __data_model__ = DocumentInstance

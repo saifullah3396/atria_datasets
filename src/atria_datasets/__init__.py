@@ -17,7 +17,13 @@ Date: 2025-04-07
 Version: 1.0.0
 License: MIT
 """
-from atria_datasets.core.dataset.atria_dataset import AtriaDataset
+
+import atria_datasets.registry  # noqa: F401 # Import the registry to ensure it is initialized
+from atria_datasets.core.dataset.atria_dataset import (
+    AtriaDataset,
+    AtriaDocumentDataset,
+    AtriaImageDataset,
+)
 from atria_datasets.core.dataset.atria_huggingface_dataset import (
     AtriaHuggingfaceDataset,
 )
@@ -42,9 +48,25 @@ from atria_datasets.core.storage.msgpack_shard_writer import (
 from atria_datasets.core.storage.sharded_dataset_storage_manager import (
     ShardedDatasetStorageManager,
 )
+from atria_datasets.core.storage.utilities import FileStorageType
+from atria_datasets.registry import (
+    BATCH_SAMPLER,
+    DATA_PIPELINE,
+    DATA_TRANSFORM,
+    DATASET,  # noqa
+)
+
+from .image_classification.cifar10 import Cifar10
+from .image_classification.cifar10_huggingface import HuggingfaceCifar10
 
 __all__ = [
+    "DATASET",
+    "DATA_PIPELINE",
+    "DATA_TRANSFORM",
+    "BATCH_SAMPLER",
     "AtriaDataset",
+    "AtriaImageDataset",
+    "AtriaDocumentDataset",
     "AtriaHuggingfaceDataset",
     "SplitIterator",
     "StandardSplitter",
@@ -59,4 +81,8 @@ __all__ = [
     "MsgpackFileWriter",
     "MsgpackShardWriter",
     "ShardedDatasetStorageManager",
+    "FileStorageType",
+    # add image classification datasets
+    "Cifar10",
+    "HuggingfaceCifar10",
 ]
