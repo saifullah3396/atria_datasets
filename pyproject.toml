@@ -139,8 +139,6 @@ conflicts = [
 
 [tool.uv.sources]
 mmcv = { url = "https://download.openmmlab.com/mmcv/dist/cu121/torch2.1.0/mmcv-2.1.0-cp311-cp311-manylinux1_x86_64.whl" }
-atria-core = { git = "https://github.com/saifullah3396/atria_core.git", branch = "v2" }
-atria-registry = { git = "https://github.com/saifullah3396/atria_registry.git" }
 torch = [
   { index = "pytorch-cpu", extra = "torch-cpu"},
   { index = "pytorch-cu121", extra = "torch-gpu" },
@@ -150,6 +148,8 @@ torchvision = [
   { index = "pytorch-cu121", extra = "torch-gpu" },
 ]
 datadings = { git = "https://github.com/saifullah3396/datadings.git" }
+atria-registry = { path = "../atria_registry", editable = true }
+atria-core = { path = "../atria_core", editable = true }
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -167,6 +167,7 @@ dev = [
     "mypy>=1.16.1",
     "pytest>=8.4.1",
     "ruff>=0.12.2",
+    "ipykernel>=6.28.1",
 ]
 
 [tool.mypy]
