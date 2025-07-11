@@ -1,7 +1,9 @@
 def test_imports():
     from atria_datasets.datasets import (
-        AtriaDataset,  # noqa
+        AtriaDataset,  # noqa  # noqa
+        AtriaDocumentDataset,  # noqa
         AtriaHuggingfaceDataset,  # noqa
+        AtriaImageDataset,  # noqa
         DeltalakeReader,  # noqa
         DeltalakeStorageManager,  # noqa
         DownloadFileInfo,  # noqa
