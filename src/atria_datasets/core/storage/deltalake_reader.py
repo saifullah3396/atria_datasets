@@ -29,9 +29,6 @@ class DeltalakeReader(Sequence[T_BaseDataInstance]):
             }
 
     def dataframe(self) -> pd.DataFrame:
-        """
-        Displays the dataset split information in a rich format.
-        """
         return self.df
 
     def __len__(self) -> int:
