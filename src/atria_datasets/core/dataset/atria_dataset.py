@@ -200,56 +200,6 @@ class AtriaDataset(
         """
         return self._data_dir
 
-    @staticmethod
-    def load_from_hub(
-        name: str,
-        split: DatasetSplitType | None = None,
-        config_name: str | None = None,
-        data_dir: str | None = None,
-        streaming_mode: bool = False,
-        allowed_keys: set[str] | None = None,
-        overwrite_existing: bool = False,
-    ) -> "AtriaDataset[T_BaseDataInstance]":
-        try:
-            from atria_hub.dataset_store import (  # type: ignore[import-not-found]
-                load_from_hub,
-            )
-        except ImportError:
-            raise ImportError(
-                "The 'atria_hub' package is required to load datasets from the hub. "
-                "Please install it using 'uv add https://github.com/saifullah3396/atria_hub'."
-            )
-
-        return load_from_hub(
-            name=name,
-            config_name=config_name,
-            split=split,
-            data_dir=data_dir,
-            streaming_mode=streaming_mode,
-            allowed_keys=allowed_keys,
-            overwrite_existing=overwrite_existing,
-        )
-
-    def upload_to_hub(
-        self, name: str, branch: str | None = None, is_public: bool = False
-    ) -> None:
-        try:
-            from atria_hub.dataset_store import (  # type: ignore[import-not-found]
-                upload_to_hub,
-            )
-        except ImportError:
-            raise ImportError(
-                "The 'atria_hub' package is required to load datasets from the hub. "
-                "Please install it using 'uv add https://github.com/saifullah3396/atria_hub'."
-            )
-        if branch is None:
-            branch = self._config_name
-
-        logger.info(
-            f"Uploading dataset {self.__class__.__name__} to hub with name {name} and config {branch}."
-        )
-        upload_to_hub(dataset=self, name=name, branch=branch, is_public=is_public)
-
     @classmethod
     def load_from_registry(
         cls,
@@ -310,6 +260,7 @@ class AtriaDataset(
         # prepare the dataset directory
         if data_dir is not None:
             self._data_dir = self._validate_data_dir(data_dir)
+            self._storage_dir = self._setup_storage_dir()
 
         # prepare the cached splits in deltalake storage
         self._prepare_cached_splits(
@@ -473,9 +424,7 @@ class AtriaDataset(
         return Path(data_dir)
 
     def _setup_storage_dir(self) -> Path:
-        storage_dir = (
-            _DEFAULT_ATRIA_DATASETS_CACHE_DIR / self._dataset_name / self._config_name
-        )
+        storage_dir = self._data_dir / self._config_name
         Path(storage_dir).mkdir(parents=True, exist_ok=True)
         return storage_dir
 
@@ -766,7 +715,221 @@ class AtriaDataset(
         self._split_iterators[DatasetSplitType.test] = value
 
 
-class AtriaImageDataset(AtriaDataset[ImageInstance]):
+class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
+    def build_split(  # type: ignore[override]
+        self,
+        split: DatasetSplitType,
+        data_dir: str | None = None,
+        runtime_transforms: Callable | None = None,
+        preprocess_transform: Callable | None = None,
+        access_token: str | None = None,
+        overwrite_existing_shards: bool = False,
+        allowed_keys: set[str] | None = None,
+        streaming: bool = False,
+        **sharded_storage_kwargs,
+    ) -> None:
+        # prepare the dataset directory
+        if data_dir is not None:
+            self._data_dir = self._validate_data_dir(data_dir)
+            self._storage_dir = self._setup_storage_dir()
+
+        # prepare the cached splits in deltalake storage
+        self._prepare_cached_splits(
+            split=split,
+            access_token=access_token,
+            streaming=streaming,
+            allowed_keys=allowed_keys,
+        )
+
+        shard_storage_type = sharded_storage_kwargs.get("shard_storage_type", None)
+        if shard_storage_type is not None:
+            self._prepare_sharded_splits(
+                shard_storage_type=shard_storage_type,
+                preprocess_transform=preprocess_transform,
+                overwrite_existing=overwrite_existing_shards,
+                allowed_keys=allowed_keys,
+                **sharded_storage_kwargs,
+            )
+
+        if runtime_transforms is not None:
+            for split_iterator in self._split_iterators.values():
+                split_iterator.output_transform = runtime_transforms
+
+    def upload_to_hub(
+        self,
+        name: str | None = None,
+        branch: str | None = None,
+        is_public: bool = False,
+    ) -> None:
+        try:
+            from atria_hub.api.datasets import DataInstanceType
+            from atria_hub.hub import AtriaHub  # type: ignore[import-not-found]
+
+            if name is None:
+                name = self._dataset_name
+            if branch is None:
+                branch = self._config_name
+
+            logger.info(
+                f"Uploading dataset {self.__class__.__name__} to hub with name {name} and config {branch}."
+            )
+
+            def data_model_to_instance_type(
+                data_model: type[T_BaseDataInstance],
+            ) -> DataInstanceType:
+                if data_model == DocumentInstance:
+                    return DataInstanceType.DOCUMENT_INSTANCE
+                elif data_model == ImageInstance:
+                    return DataInstanceType.IMAGE_INSTANCE
+                else:
+                    raise ValueError(f"Unsupported data model: {data_model}")
+
+            hub = AtriaHub()
+            dataset = hub.datasets.get_or_create(
+                name=name,
+                description=self.metadata.description,
+                data_instance_type=data_model_to_instance_type(self.data_model),
+                is_public=is_public,
+            )
+            hub.datasets.upload_files(
+                dataset=dataset,
+                branch=branch,
+                dataset_files=self.get_dataset_files_from_dir(),
+            )
+        except ImportError:
+            raise ImportError(
+                "The 'atria_hub' package is required to load datasets from the hub. "
+                "Please install it using 'uv add https://github.com/saifullah3396/atria_hub'."
+            )
+
+    def prepare_downloads(self, data_dir: str, access_token: str | None = None) -> None:
+        """
+        Prepares the dataset by downloading and extracting files from the hub.
+
+        Args:
+            data_dir (str): The directory where the dataset files are stored.
+
+        Returns:
+            None
+        """
+
+        if not self._downloads_prepared:
+            from atria_hub.hub import AtriaHub  # type: ignore[import-not-found]
+
+            hub = AtriaHub()
+            dataset = hub.datasets.get(name=self._dataset_name)
+            logger.info(
+                f"Loading dataset {self._dataset_name} from hub with branch {self._config_name} into storage directory {data_dir}."
+            )
+
+            # Download the dataset files from the hub
+            hub.datasets.download_files(
+                dataset=dataset, branch=self._config_name, destination_path=data_dir
+            )
+            self._downloads_prepared = True
+
+    def _prepare_cached_splits(  # type: ignore[override]
+        self,
+        split: DatasetSplitType | None = None,
+        access_token: str | None = None,
+        allowed_keys: set[str] | None = None,
+        streaming: bool = False,
+    ) -> None:
+        from atria_datasets.core.storage.deltalake_storage_manager import (
+            DeltalakeStorageManager,
+        )
+
+        if split is None:
+            splits = list(DatasetSplitType)
+        else:
+            splits = [split]
+
+        logger.info(f"Caching dataset to storage dir: {self._storage_dir}")
+        deltalake_storage_manager = DeltalakeStorageManager(
+            storage_dir=str(self._storage_dir)
+        )
+
+        # prepare the downloads
+        if not streaming:
+            if not deltalake_storage_manager.dataset_exists():
+                self.prepare_downloads(
+                    data_dir=str(self._storage_dir), access_token=access_token
+                )
+            else:
+                logger.info(
+                    f"Dataset already exists in storage: {str(self._storage_dir)}. "
+                    f"Skipping download."
+                )
+
+        for split in splits:
+            split_exists = deltalake_storage_manager.split_exists(split=split)
+            if split_exists:
+                logger.info(
+                    f"Loading dataset split {split.value} from cached storage: "
+                    f"{deltalake_storage_manager.split_dir(split=split)}"
+                )
+
+                # read split from storage
+                self._split_iterators[split] = deltalake_storage_manager.read_split(
+                    split=split,
+                    data_model=self.data_model,
+                    allowed_keys=allowed_keys,
+                    streaming_mode=streaming,
+                )
+
+    @classmethod
+    def load_from_hub(
+        cls,
+        name: str,
+        branch: str,
+        split: DatasetSplitType | None = None,
+        preprocess_transform: Callable | None = None,
+        access_token: str | None = None,
+        overwrite_existing_shards: bool = False,
+        allowed_keys: set[str] | None = None,
+        build_kwargs: dict[str, Any] | None = None,
+        shard_storage_type: FileStorageType | None = None,
+        sharded_storage_kwargs: dict[str, Any] | None = None,
+        streaming: bool = False,
+    ):
+        try:
+            import atria_hub  # type: ignore[import-not-found]
+        except ImportError:
+            raise ImportError(
+                "The 'atria_hub' package is required to load datasets from the hub. "
+                "Please install it using 'uv add https://github.com/saifullah3396/atria_hub'."
+            )
+
+        atria_dataset = cls(
+            dataset_name=name, config_name=branch, **(build_kwargs or {})
+        )
+
+        # Build the split for the dataset
+        atria_dataset.build_split(
+            split=split,
+            preprocess_transform=preprocess_transform,
+            access_token=access_token,
+            overwrite_existing_shards=overwrite_existing_shards,
+            allowed_keys=allowed_keys,
+            streaming=streaming,
+            shard_storage_type=shard_storage_type,
+            **(sharded_storage_kwargs if sharded_storage_kwargs else {}),
+        )
+
+    def _split_configs(self, data_dir: str) -> list[SplitConfig]:
+        raise RuntimeError(
+            "The `_split_configs` is undefined for AtriaHubDataset as it directly loads splits from the hub."
+        )
+
+    def _split_iterator(
+        self, split: DatasetSplitType, **kwargs: Any
+    ) -> Sequence | Generator[Any, None, None]:
+        raise RuntimeError(
+            "The `_split_iterator` is undefined for AtriaHubDataset as it directly loads splits from the hub."
+        )
+
+
+class AtriaImageDataset(AtriaHubDataset[ImageInstance]):
     """
     AtriaImageDataset is a specialized dataset class for handling image datasets.
     It inherits from AtriaDataset and provides additional functionality specific to image data.
@@ -775,7 +938,7 @@ class AtriaImageDataset(AtriaDataset[ImageInstance]):
     __data_model__ = ImageInstance
 
 
-class AtriaDocumentDataset(AtriaDataset[DocumentInstance]):
+class AtriaDocumentDataset(AtriaHubDataset[DocumentInstance]):
     """
     AtriaDocumentDataset is a specialized dataset class for handling document datasets.
     It inherits from AtriaDataset and provides additional functionality specific to document data.

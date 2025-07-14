@@ -11,13 +11,16 @@ class DeltalakeReader(Sequence[T_BaseDataInstance]):
         path: str,
         data_model: T_BaseDataInstance,
         allowed_keys: set[str] | None = None,
+        storage_options: dict | None = None,
     ):
         import deltalake
 
         self.delta_table_path = path
         self.data_model = data_model
         self.allowed_keys = allowed_keys
-        self.df = deltalake.DeltaTable(self.delta_table_path).to_pandas()
+        self.df = deltalake.DeltaTable(
+            self.delta_table_path, storage_options=storage_options
+        ).to_pandas()
         if self.allowed_keys is not None:
             self.allowed_keys = {
                 col

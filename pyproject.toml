@@ -12,7 +12,9 @@ license = { file = "LICENSE.txt" }
 authors = [{ name = "Saifullah", email = "saifullah.saifullah@dfki.de" }]
 dependencies = [
     "atria-core",
+    "atria-hub",
     "atria-registry",
+    "boto3>=1.39.4",
     "datadings",
     "datasets>=4.0.0",
     "deltalake>=1.0.2",
@@ -23,6 +25,7 @@ dependencies = [
     "msgpack>=1.1.1",
     "pandarallel>=1.6.5",
     "pandas>=2.3.1",
+    "pyyaml>=6.0.2",
     "ray>=2.47.1",
     "requests>=2.32.4",
     "scikit-learn>=1.7.0",
@@ -150,6 +153,7 @@ torchvision = [
 datadings = { git = "https://github.com/saifullah3396/datadings.git" }
 atria-registry = { path = "../atria_registry", editable = true }
 atria-core = { path = "../atria_core", editable = true }
+atria-hub = { path = "../atria_hub" }
 
 [[tool.uv.index]]
 name = "pytorch-cpu"

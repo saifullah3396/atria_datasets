@@ -74,6 +74,9 @@ class DeltalakeStorageManager:
     def split_dir(self, split: "DatasetSplitType") -> Path:
         return Path(self._storage_dir) / f"delta/{split.value}"
 
+    def dataset_exists(self) -> bool:
+        return (Path(self._storage_dir) / "delta/").exists()
+
     def split_exists(self, split: "DatasetSplitType") -> bool:
         return self.split_dir(split).exists()
 
@@ -119,9 +122,11 @@ class DeltalakeStorageManager:
         data_model: "BaseDataInstance",
         output_transform: Callable | None = None,
         allowed_keys: set[str] | None = None,
+        streaming_mode: bool = False,
     ) -> "SplitIterator":
         from atria_datasets.core.dataset.atria_dataset import SplitIterator
         from atria_datasets.core.storage.deltalake_reader import DeltalakeReader
+        from atria_datasets.core.storage.deltalake_streamer import DeltalakeStreamer
 
         if not self.split_exists(split):
             raise RuntimeError(
@@ -132,13 +137,27 @@ class DeltalakeStorageManager:
             allowed_keys.add("index")
             allowed_keys.add("sample_id")
 
-        return SplitIterator(
-            split=split,
-            base_iterator=DeltalakeReader(
+        if streaming_mode:
+            from atria_hub.hub import AtriaHub
+
+            storage_options = AtriaHub().get_storage_options()
+            print("storage_options", storage_options)
+            base_iterator = DeltalakeStreamer(
                 path=str(self.split_dir(split=split)),
                 data_model=data_model,
                 allowed_keys=allowed_keys,
-            ),
+                storage_options=storage_options,
+            )
+        else:
+            base_iterator = DeltalakeReader(
+                path=str(self.split_dir(split=split)),
+                data_model=data_model,
+                allowed_keys=allowed_keys,
+            )
+
+        return SplitIterator(
+            split=split,
+            base_iterator=base_iterator,
             input_transform=lambda x: x,
             output_transform=output_transform,
             data_model=data_model,

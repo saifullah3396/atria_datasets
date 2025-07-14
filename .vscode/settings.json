@@ -60,9 +60,11 @@
     ],
     "python.analysis.include": [
         "./src",
+        "../atria_registry/src",
     ],
     "python.analysis.extraPaths": [
         "./src",
+        "../atria_registry/src",
     ],
     "python-envs.pythonProjects": [],
     "python.defaultInterpreterPath": "./.venv/bin/python",
