@@ -900,12 +900,10 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
                 "Please install it using 'uv add https://github.com/saifullah3396/atria_hub'."
             )
 
-        atria_dataset = cls(
-            dataset_name=name, config_name=branch, **(build_kwargs or {})
-        )
+        dataset = cls(dataset_name=name, config_name=branch, **(build_kwargs or {}))
 
         # Build the split for the dataset
-        atria_dataset.build_split(
+        dataset.build_split(
             split=split,
             preprocess_transform=preprocess_transform,
             access_token=access_token,
@@ -915,6 +913,8 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             shard_storage_type=shard_storage_type,
             **(sharded_storage_kwargs if sharded_storage_kwargs else {}),
         )
+
+        return cast(AtriaDataset[T_BaseDataInstance], dataset)
 
     def _split_configs(self, data_dir: str) -> list[SplitConfig]:
         raise RuntimeError(

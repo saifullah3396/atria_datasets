@@ -141,7 +141,6 @@ class DeltalakeStorageManager:
             from atria_hub.hub import AtriaHub
 
             storage_options = AtriaHub().get_storage_options()
-            print("storage_options", storage_options)
             base_iterator = DeltalakeStreamer(
                 path=str(self.split_dir(split=split)),
                 data_model=data_model,
@@ -149,12 +148,11 @@ class DeltalakeStorageManager:
                 storage_options=storage_options,
             )
         else:
-            base_iterator = DeltalakeReader(
+            base_iterator = DeltalakeReader(  # type: ignore
                 path=str(self.split_dir(split=split)),
                 data_model=data_model,
                 allowed_keys=allowed_keys,
             )
-
         return SplitIterator(
             split=split,
             base_iterator=base_iterator,

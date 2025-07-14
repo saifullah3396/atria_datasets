@@ -1,15 +1,16 @@
 import logging
 from collections.abc import Sequence
+from typing import Any
 
-import boto3
 from deltalake import DeltaTable
+from pyarrow.dataset import Dataset as ArrowDataset
 
 from atria_datasets.core.typing.common import T_BaseDataInstance
 
 logger = logging.getLogger(__name__)
 
 
-class DeltaStreamer(Sequence[T_BaseDataInstance]):
+class DeltalakeStreamer(Sequence[T_BaseDataInstance]):
     def __init__(
         self,
         path: str,
@@ -19,103 +20,76 @@ class DeltaStreamer(Sequence[T_BaseDataInstance]):
         presign_expiry: int = 3600,  # seconds
     ):
         self.path = path
+        self.repo_name = self.path.split("/")[2]
+        self.branch_name = self.path.split("/")[3]
         self.data_model = data_model
         self.allowed_keys = allowed_keys
         self.storage_options = storage_options or {}
         self.presign_expiry = presign_expiry
-
-        # Get table length without loading all IDs
         delta_table = DeltaTable(path, storage_options=self.storage_options)
         self._length = delta_table.to_pyarrow_dataset().count_rows()
+        self._s3_client: Any | None = None
+        self._pa_dataset: ArrowDataset | None = None
 
-        # Worker-local DeltaTable instance (lazy)
-        self._delta_table = None
-
-    def _get_delta_table(self) -> DeltaTable:
-        if self._delta_table is None:
-            self._delta_table = DeltaTable(
+    def _initialize_dataset(self) -> ArrowDataset:
+        if self._pa_dataset is None:
+            self._pa_dataset = DeltaTable(
                 self.path, storage_options=self.storage_options
+            ).to_pyarrow_dataset()
+
+    def _initialize_s3_client(self):
+        if self._s3_client is None:
+            import boto3
+            from botocore.config import Config
+
+            self._s3_client = boto3.client(
+                "s3",
+                endpoint_url=self.storage_options.get("AWS_ENDPOINT"),
+                aws_access_key_id=self.storage_options.get("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=self.storage_options.get("AWS_SECRET_ACCESS_KEY"),
+                region_name="stub",
+                config=Config(signature_version="s3v4"),
             )
-        return self._delta_table
 
     def __len__(self) -> int:
         return self._length
 
-    def __getitem__(
-        self, idx: int | slice
-    ) -> T_BaseDataInstance | list[T_BaseDataInstance]:
-        if isinstance(idx, slice):
-            indices = list(range(*idx.indices(self._length)))
-            return self.get_batch(indices)
-        else:
-            if idx < 0:
-                idx = self._length + idx
-            if idx < 0 or idx >= self._length:
-                raise IndexError(
-                    f"Index {idx} out of bounds for dataset with length {self._length}"
-                )
-            return self.get_batch([idx])[0]
+    def __getitem__(self, index: int) -> T_BaseDataInstance:  # type: ignore
+        self._initialize_dataset()
+        self._initialize_s3_client()
+        rows = self._pa_dataset.take([index]).to_pylist()  # type: ignore
+        return self._process_rows(rows)[0]
 
-    def get_batch(self, indices: list[int]) -> list[T_BaseDataInstance]:
-        """Efficiently load a batch of samples by their indices."""
-        if not indices:
-            return []
+    def __getitems__(self, indices: list[int]) -> list[T_BaseDataInstance]:
+        self._initialize_dataset()
+        self._initialize_s3_client()
 
-        # Validate indices
-        for idx in indices:
-            if idx < 0 or idx >= self._length:
-                raise IndexError(
-                    f"Index {idx} out of bounds for dataset with length {self._length}"
-                )
+        rows = self._pa_dataset.take(indices).to_pylist()  # type: ignore
+        return self._process_rows(rows)
 
-        delta_table = self._get_delta_table()
-
-        # Get columns to fetch
-        columns = list(self.allowed_keys) if self.allowed_keys else None
-
-        # Convert to Arrow dataset and take specific indices
-        dataset = delta_table.to_pyarrow_dataset(columns=columns)
-        table = dataset.take(indices)
-
-        # Convert to list of dicts
-        rows = table.to_pylist()
-
-        # Lazily create boto3 client if needed
-        if self.boto3_client is None:
-            self.boto3_client = boto3.client("s3")
-
-        # Process each row
-        result = []
-        for row_dict in rows:
-            # Convert S3 paths to presigned URLs
-            row_dict = self._convert_paths_to_presigned_urls(row_dict)
-            # Create data instance
-            result.append(self.data_model.from_row(row_dict))
-
-        return result
+    def _process_rows(self, rows: list[dict]) -> list[T_BaseDataInstance]:
+        processed_rows = []
+        for row in rows:
+            if self.allowed_keys is not None:
+                row = {k: v for k, v in row.items() if k in self.allowed_keys}
+            row = self._convert_paths_to_presigned_urls(row)
+            instance = self.data_model.from_row(row)
+            processed_rows.append(instance)
+        return processed_rows
 
     def _convert_paths_to_presigned_urls(self, row: dict) -> dict:
         for key, value in row.items():
-            if (
-                isinstance(value, str)
-                and key.startswith("file_path")
-                and value.startswith("s3://")
-            ):
+            if isinstance(value, str) and "file_path" in key:
                 try:
-                    bucket, key_path = self._parse_s3_path(value)
-                    presigned_url = self.boto3_client.generate_presigned_url(
+                    presigned_url = self._s3_client.generate_presigned_url(  # type: ignore
                         "get_object",
-                        Params={"Bucket": bucket, "Key": key_path},
+                        Params={
+                            "Bucket": self.repo_name,
+                            "Key": f"{self.branch_name}/" + str(value),
+                        },
                         ExpiresIn=self.presign_expiry,
                     )
                     row[key] = presigned_url
                 except Exception as e:
                     logger.warning(f"Failed to generate presigned URL for {value}: {e}")
-                    # Keep original path if presigning fails
         return row
-
-    @staticmethod
-    def _parse_s3_path(s3_uri: str) -> tuple[str, str]:
-        s3_uri = s3_uri.replace("s3://", "")
-        parts = s3_uri.split("/", 1)
-        return parts[0], parts[1] if len(parts) > 1 else ""
