@@ -79,7 +79,7 @@ class DataTransformRegistryGroup(RegistryGroup):
             transform (str): The name of the torchvision transform.
             **kwargs: Additional keyword arguments for the registration.
         """
-        from atria_core.utilities.common import _convert_to_snake_case
+        from atria_core.utilities.strings import _convert_to_snake_case
 
         from atria_datasets.transforms.torchvision import TorchvisionTransform
 

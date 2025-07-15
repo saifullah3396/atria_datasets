@@ -28,21 +28,21 @@ from typing import TYPE_CHECKING
 import rich
 from atria_core.constants import _DEFAULT_ATRIA_DATASETS_CACHE_DIR
 from atria_core.logger.logger import get_logger
+from atria_core.transforms.base import DataTransformsDict
 from atria_core.types import DatasetSplitType
 from atria_core.utilities.repr import RepresentationMixin
-from atria_registry import DATA_PIPELINE
 from rich.pretty import pretty_repr
 
 from atria_datasets.core.batch_samplers.batch_samplers_dict import BatchSamplersDict
 from atria_datasets.core.dataset.atria_dataset import AtriaDataset
 from atria_datasets.core.dataset_splitters.standard_splitter import StandardSplitter
 from atria_datasets.core.storage.utilities import FileStorageType
-from atria_datasets.core.transforms.base import DataTransformsDict
 from atria_datasets.pipelines.utilities import (
     auto_dataloader,
     default_collate,
     mmdet_pseudo_collate,
 )
+from atria_datasets.registry import DATA_PIPELINE
 
 if TYPE_CHECKING:
     from torch.utils.data import DataLoader, Dataset  # type: ignore
