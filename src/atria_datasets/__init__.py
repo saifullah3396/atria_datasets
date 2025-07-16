@@ -54,7 +54,6 @@ from atria_datasets.core.storage.utilities import FileStorageType
 from atria_datasets.registry import (
     BATCH_SAMPLER,
     DATA_PIPELINE,
-    DATA_TRANSFORM,
     DATASET,  # noqa
 )
 
@@ -64,7 +63,6 @@ from .image_classification.cifar10_huggingface import HuggingfaceCifar10
 __all__ = [
     "DATASET",
     "DATA_PIPELINE",
-    "DATA_TRANSFORM",
     "BATCH_SAMPLER",
     "AtriaDataset",
     "AtriaImageDataset",

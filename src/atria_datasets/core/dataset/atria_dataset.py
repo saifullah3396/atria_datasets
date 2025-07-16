@@ -47,7 +47,6 @@ from atria_core.types import (
 )
 from atria_core.utilities.repr import RepresentationMixin
 from atria_registry.constants import _PROVIDER_NAME
-from atria_registry.registry_config_mixin import RegistryConfigMixin
 from omegaconf import OmegaConf
 
 from atria_datasets.core.constants import _DEFAULT_DOWNLOAD_PATH
@@ -59,9 +58,7 @@ from atria_datasets.core.typing.common import T_BaseDataInstance
 logger = get_logger(__name__)
 
 
-class AtriaDataset(
-    Generic[T_BaseDataInstance], RepresentationMixin, RegistryConfigMixin
-):
+class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin):
     """
     Base class for datasets in the Atria application.
 
@@ -95,7 +92,6 @@ class AtriaDataset(
         max_train_samples: int | None = None,
         max_validation_samples: int | None = None,
         max_test_samples: int | None = None,
-        **kwargs,
     ):
         """
         Initializes the AtriaDataset.
@@ -127,17 +123,6 @@ class AtriaDataset(
         self._split_iterators: dict[DatasetSplitType, SplitIterator] = {}
         self._downloads_prepared: bool = False
         self._sharded_splits_prepared: bool = False
-
-        RegistryConfigMixin.__init__(
-            self,
-            dataset_name=self._dataset_name,
-            config_name=self._config_name,
-            data_urls=self._data_urls,
-            max_train_samples=self._max_train_samples,
-            max_validation_samples=self._max_validation_samples,
-            max_test_samples=self._max_test_samples,
-            **kwargs,
-        )
 
     @property
     def name(self) -> str:
@@ -494,7 +479,6 @@ class AtriaDataset(
         else:
             splits = [split]
 
-        logger.info(f"Caching dataset to storage dir: {self._storage_dir}")
         deltalake_storage_manager = DeltalakeStorageManager(
             storage_dir=str(self._storage_dir), write_batch_size=write_batch_size
         )
@@ -526,6 +510,9 @@ class AtriaDataset(
                 self.save_dataset_info()
 
                 try:
+                    logger.info(
+                        f"Caching dataset split [{split.value}] to storage dir: {self._storage_dir}"
+                    )
                     # write split to storage
                     deltalake_storage_manager.write_split(
                         split_iterator=self.prepare_split_iterator(
@@ -676,10 +663,7 @@ class AtriaDataset(
         Returns:
             SplitIterator: The validation split iterator.
         """
-        split = self._split_iterators.get(DatasetSplitType.validation, None)
-        if split is None:
-            raise SplitNotFoundError(DatasetSplitType.validation.value)
-        return split
+        return self._split_iterators.get(DatasetSplitType.validation, None)
 
     @validation.setter
     def validation(self, value: SplitIterator[T_BaseDataInstance]) -> None:
@@ -699,10 +683,7 @@ class AtriaDataset(
         Returns:
             SplitIterator: The test split iterator.
         """
-        split = self._split_iterators.get(DatasetSplitType.test, None)
-        if split is None:
-            raise SplitNotFoundError(DatasetSplitType.test.value)
-        return split
+        return self._split_iterators.get(DatasetSplitType.test, None)
 
     @test.setter
     def test(self, value: SplitIterator[T_BaseDataInstance]) -> None:
@@ -844,7 +825,6 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         else:
             splits = [split]
 
-        logger.info(f"Caching dataset to storage dir: {self._storage_dir}")
         deltalake_storage_manager = DeltalakeStorageManager(
             storage_dir=str(self._storage_dir)
         )
@@ -929,7 +909,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         )
 
 
-class AtriaImageDataset(AtriaHubDataset[ImageInstance]):
+class AtriaImageDataset(AtriaDataset[ImageInstance]):
     """
     AtriaImageDataset is a specialized dataset class for handling image datasets.
     It inherits from AtriaDataset and provides additional functionality specific to image data.
@@ -938,7 +918,25 @@ class AtriaImageDataset(AtriaHubDataset[ImageInstance]):
     __data_model__ = ImageInstance
 
 
-class AtriaDocumentDataset(AtriaHubDataset[DocumentInstance]):
+class AtriaDocumentDataset(AtriaDataset[DocumentInstance]):
+    """
+    AtriaDocumentDataset is a specialized dataset class for handling document datasets.
+    It inherits from AtriaDataset and provides additional functionality specific to document data.
+    """
+
+    __data_model__ = DocumentInstance
+
+
+class AtriaHubImageDataset(AtriaHubDataset[ImageInstance]):
+    """
+    AtriaImageDataset is a specialized dataset class for handling image datasets.
+    It inherits from AtriaDataset and provides additional functionality specific to image data.
+    """
+
+    __data_model__ = ImageInstance
+
+
+class AtriaHubDocumentDataset(AtriaHubDataset[DocumentInstance]):
     """
     AtriaDocumentDataset is a specialized dataset class for handling document datasets.
     It inherits from AtriaDataset and provides additional functionality specific to document data.

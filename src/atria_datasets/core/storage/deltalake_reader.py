@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 
 import pandas as pd
-
 from atria_datasets.core.typing.common import T_BaseDataInstance
 
 
@@ -22,11 +21,11 @@ class DeltalakeReader(Sequence[T_BaseDataInstance]):
             self.delta_table_path, storage_options=storage_options
         ).to_pandas()
         if self.allowed_keys is not None:
-            self.allowed_keys = {
+            self.allowed_keys = [
                 col
                 for col in self.df.columns
                 if col.startswith(tuple(self.allowed_keys))
-            }
+            ]
 
     def dataframe(self) -> pd.DataFrame:
         return self.df

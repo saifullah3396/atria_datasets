@@ -44,13 +44,8 @@ License: MIT
 
 from atria_registry import ModuleRegistry
 
-from atria_datasets.registry.module_registry import init_registry
-from atria_datasets.registry.registry_groups import (
-    DatasetRegistryGroup,
-    DataTransformRegistryGroup,
-)
-
-init_registry()
+from atria_datasets.registry.module_registry import *  # noqa: F401, F403
+from atria_datasets.registry.registry_groups import DatasetRegistryGroup
 
 DATASET: DatasetRegistryGroup = ModuleRegistry().DATASET
 """Registry group for datasets.
@@ -66,13 +61,6 @@ Used to register and manage data pipeline components that handle data processing
 workflows and transformations.
 """
 
-DATA_TRANSFORM: DataTransformRegistryGroup = ModuleRegistry().DATA_TRANSFORM
-"""Registry group for data transformations.
-
-Used to register and manage data transformation components that modify or process
-input data. Includes preprocessing, augmentation, and normalization operations.
-"""
-
 BATCH_SAMPLER = ModuleRegistry().BATCH_SAMPLER
 """Registry group for batch samplers.
 
@@ -81,4 +69,4 @@ is grouped into batches during training and inference.
 """
 
 
-__all__ = ["DATASET", "DATA_PIPELINE", "DATA_TRANSFORM", "BATCH_SAMPLER"]
+__all__ = ["DATASET", "DATA_PIPELINE", "BATCH_SAMPLER"]
