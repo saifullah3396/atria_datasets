@@ -2,10 +2,9 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
+from atria_datasets.core.typing.common import T_BaseDataInstance
 from deltalake import DeltaTable
 from pyarrow.dataset import Dataset as ArrowDataset
-
-from atria_datasets.core.typing.common import T_BaseDataInstance
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +25,11 @@ class DeltalakeStreamer(Sequence[T_BaseDataInstance]):
         self.allowed_keys = allowed_keys
         self.storage_options = storage_options or {}
         self.presign_expiry = presign_expiry
-        delta_table = DeltaTable(path, storage_options=self.storage_options)
-        self._length = delta_table.to_pyarrow_dataset().count_rows()
+        self._length = (
+            DeltaTable(path, storage_options=self.storage_options)
+            .to_pyarrow_dataset()
+            .count_rows()
+        )
         self._s3_client: Any | None = None
         self._pa_dataset: ArrowDataset | None = None
 
@@ -55,6 +57,8 @@ class DeltalakeStreamer(Sequence[T_BaseDataInstance]):
         return self._length
 
     def __getitem__(self, index: int) -> T_BaseDataInstance:  # type: ignore
+        if isinstance(index, list):
+            return self.__getitems__(index)
         self._initialize_dataset()
         self._initialize_s3_client()
         rows = self._pa_dataset.take([index]).to_pylist()  # type: ignore
