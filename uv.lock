@@ -161,6 +161,9 @@ source = { editable = "../atria_core" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "coloredlogs" },
+    { name = "coverage" },
+    { name = "factory-boy" },
+    { name = "faker" },
     { name = "imagesize" },
     { name = "lazy-loader" },
     { name = "numpy" },
@@ -168,14 +171,19 @@ dependencies = [
     { name = "pillow" },
     { name = "pyarrow" },
     { name = "pydantic" },
+    { name = "pytest" },
     { name = "rich" },
+    { name = "torchtyping" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4", specifier = "==4.12.2" },
     { name = "coloredlogs", specifier = "==15.0.1" },
+    { name = "coverage" },
     { name = "coverage", marker = "extra == 'test'" },
+    { name = "factory-boy" },
+    { name = "faker" },
     { name = "imagesize", specifier = ">=1.4.1" },
     { name = "lazy-loader", specifier = "==0.4" },
     { name = "numpy", specifier = "==1.26.4" },
@@ -183,36 +191,26 @@ requires-dist = [
     { name = "pillow", specifier = "==10.0.0" },
     { name = "pyarrow", specifier = ">=20.0.0" },
     { name = "pydantic", specifier = ">=2.11.7" },
+    { name = "pytest" },
     { name = "rich", specifier = "==14.0.0" },
-    { name = "torch", marker = "extra == 'torch-cpu'", specifier = "==2.1.2", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "atria-core", extra = "torch-cpu" } },
-    { name = "torch", marker = "extra == 'torch-gpu'", specifier = "==2.1.2", index = "https://download.pytorch.org/whl/cu121", conflict = { package = "atria-core", extra = "torch-gpu" } },
-    { name = "torchvision", marker = "extra == 'torch-cpu'", specifier = "==0.16.2", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "atria-core", extra = "torch-cpu" } },
-    { name = "torchvision", marker = "extra == 'torch-gpu'", specifier = "==0.16.2", index = "https://download.pytorch.org/whl/cu121", conflict = { package = "atria-core", extra = "torch-gpu" } },
+    { name = "torchtyping", specifier = ">=0.1.5" },
 ]
-provides-extras = ["torch-cpu", "torch-gpu", "test"]
+provides-extras = ["test"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "beautifulsoup4", specifier = "==4.12.2" },
-    { name = "bs4", specifier = ">=0.0.2" },
-    { name = "codename", specifier = "==1.1" },
-    { name = "coloredlogs", specifier = "==15.0.1" },
     { name = "factory-boy", specifier = ">=3.3.3" },
-    { name = "gotrue", specifier = "==2.12.0" },
-    { name = "imagesize", specifier = ">=1.4.1" },
     { name = "ipykernel", specifier = ">=6.29.5" },
-    { name = "lazy-loader", specifier = "==0.4" },
-    { name = "numpy", specifier = "==1.26.4" },
-    { name = "omegaconf", specifier = "==2.3.0" },
-    { name = "pillow", specifier = "==10.0.0" },
-    { name = "polyfactory", specifier = ">=2.21.0" },
     { name = "pyarrow", specifier = ">=20.0.0" },
-    { name = "pytorch-ignite", specifier = "==0.5.0.post2" },
-    { name = "rich", specifier = "==14.0.0" },
     { name = "ruff", specifier = ">=0.12.2" },
-    { name = "supabase", specifier = ">=2.7.4" },
-    { name = "torch", specifier = "==2.1.2" },
-    { name = "torchvision", specifier = "==0.16.2" },
+]
+torch-cpu = [
+    { name = "torch", specifier = "==2.1.2", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "atria-core", group = "torch-cpu" } },
+    { name = "torchvision", specifier = "==0.16.2", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "atria-core", group = "torch-cpu" } },
+]
+torch-gpu = [
+    { name = "torch", specifier = "==2.1.2", index = "https://download.pytorch.org/whl/cu121", conflict = { package = "atria-core", group = "torch-gpu" } },
+    { name = "torchvision", specifier = "==0.16.2", index = "https://download.pytorch.org/whl/cu121", conflict = { package = "atria-core", group = "torch-gpu" } },
 ]
 
 [[package]]
@@ -231,6 +229,7 @@ dependencies = [
     { name = "gdown" },
     { name = "hydra-core" },
     { name = "hydra-zen" },
+    { name = "lakefs" },
     { name = "msgpack" },
     { name = "pandarallel" },
     { name = "pandas" },
@@ -298,6 +297,7 @@ requires-dist = [
     { name = "gdown", specifier = ">=5.2.0" },
     { name = "hydra-core", specifier = "==1.3.2" },
     { name = "hydra-zen", specifier = "==0.14.0" },
+    { name = "lakefs", specifier = ">=0.11.1" },
     { name = "mmcv", marker = "extra == 'transforms'", url = "https://download.openmmlab.com/mmcv/dist/cu121/torch2.1.0/mmcv-2.1.0-cp311-cp311-manylinux1_x86_64.whl" },
     { name = "mmdet", marker = "extra == 'transforms'", specifier = "==3.3.0" },
     { name = "msgpack", specifier = ">=1.1.1" },
@@ -350,7 +350,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "atriax-client", directory = "../atriax_client" },
+    { name = "atriax-client", editable = "../atriax_client" },
     { name = "coverage", marker = "extra == 'test'" },
     { name = "gotrue", specifier = ">=2.12.3" },
     { name = "keyring", specifier = ">=25.6.0" },
@@ -398,7 +398,7 @@ provides-extras = ["test"]
 [[package]]
 name = "atriax-client"
 version = "0.1.0"
-source = { directory = "../atriax_client" }
+source = { editable = "../atriax_client" }
 dependencies = [
     { name = "attrs" },
     { name = "httpx" },
@@ -3020,6 +3020,22 @@ wheels = [
 ]
 
 [[package]]
+name = "torchtyping"
+version = "0.1.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "torch", version = "2.1.2", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-14-atria-datasets-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-14-atria-datasets-torch-cpu' and extra == 'extra-14-atria-datasets-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-14-atria-datasets-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-14-atria-datasets-torch-cpu' and extra == 'extra-14-atria-datasets-torch-gpu')" },
+    { name = "torch", version = "2.1.2", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-14-atria-datasets-torch-cpu' and extra == 'extra-14-atria-datasets-torch-gpu') or (extra != 'extra-14-atria-datasets-torch-cpu' and extra != 'extra-14-atria-datasets-torch-gpu')" },
+    { name = "torch", version = "2.1.2+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-14-atria-datasets-torch-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-14-atria-datasets-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-14-atria-datasets-torch-cpu' and extra == 'extra-14-atria-datasets-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-14-atria-datasets-torch-cpu' and extra == 'extra-14-atria-datasets-torch-gpu')" },
+    { name = "torch", version = "2.1.2+cu121", source = { registry = "https://download.pytorch.org/whl/cu121" }, marker = "extra == 'extra-14-atria-datasets-torch-gpu'" },
+    { name = "typeguard" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0c/b2/9099ac2d76ebe538d527ef73844bcfa1296a5c75bd9f2d489e862d47bb42/torchtyping-0.1.5.tar.gz", hash = "sha256:fb51e1792536223e2497b1e106ed0cbe681f7324044599cb718d03be3f2b3851", size = 23067, upload_time = "2024-08-01T02:44:53.579Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/77/33/3915d3a985bf3914aadfc4e24438a8499c0cd91af0c6d251ad5b773bc310/torchtyping-0.1.5-py3-none-any.whl", hash = "sha256:429d76e16b08a2409226320565d557d4ba3d0d6f544db3e5dc4cf690ffa2a3bd", size = 17992, upload_time = "2024-08-01T02:44:51.857Z" },
+]
+
+[[package]]
 name = "torchvision"
 version = "0.16.2"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
@@ -3186,6 +3202,15 @@ dependencies = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5c/c1/54fffb2eb13d293d9a429fead3646752ea190de0229bcf3d591ba2481263/triton-2.1.0-0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:919b06453f0033ea52c13eaf7833de0e57db3178d23d4e04f9fc71c4f2c32bf8", size = 89234153, upload_time = "2023-09-01T07:26:20.161Z" },
+]
+
+[[package]]
+name = "typeguard"
+version = "2.13.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3a/38/c61bfcf62a7b572b5e9363a802ff92559cb427ee963048e1442e3aef7490/typeguard-2.13.3.tar.gz", hash = "sha256:00edaa8da3a133674796cf5ea87d9f4b4c367d77476e185e80251cc13dfbb8c4", size = 40604, upload_time = "2021-12-10T21:09:39.158Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9a/bb/d43e5c75054e53efce310e79d63df0ac3f25e34c926be5dffb7d283fb2a8/typeguard-2.13.3-py3-none-any.whl", hash = "sha256:5e3e3be01e887e7eafae5af63d1f36c849aaa94e3a0112097312aabfa16284f1", size = 17605, upload_time = "2021-12-10T21:09:37.844Z" },
 ]
 
 [[package]]

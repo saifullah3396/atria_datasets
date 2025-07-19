@@ -33,14 +33,13 @@ from typing import Any
 
 from atria_core.logger import get_logger
 from atria_core.types import BaseDataInstance
-from atria_core.utilities.repr import RepresentationMixin
 
 from atria_datasets.core.typing.common import T_BaseDataInstance
 
 logger = get_logger(__name__)
 
 
-class InstanceTransform(RepresentationMixin):
+class InstanceTransform:
     def __init__(
         self,
         input_transform: Callable,

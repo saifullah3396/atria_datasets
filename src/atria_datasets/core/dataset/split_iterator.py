@@ -48,6 +48,13 @@ logger = get_logger(__name__)
 
 
 class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
+    __repr_fields__ = [
+        "base_iterator",
+        "input_transform",
+        "output_transform",
+        "subset_indices",
+    ]
+
     def __init__(
         self,
         split: DatasetSplitType,
@@ -200,14 +207,7 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
         Yields:
             RichReprResult: A generator of key-value pairs or values for the object's attributes.
         """
-        ignored_fields = ["_split", "_max_len", "_apply_output_transform"]
-
-        for name, field_repr in self.__dict__.items():
-            if name not in ignored_fields:
-                if name is None:
-                    yield field_repr
-                else:
-                    yield name, field_repr
+        yield from super().__rich_repr__()
         try:
             yield "num_rows", len(self)
         except Exception:

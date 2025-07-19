@@ -13,11 +13,9 @@ from atria_datasets import DATASET, AtriaHuggingfaceImageDataset
 
 @DATASET.register("huggingface_cifar10")
 class HuggingfaceCifar10(AtriaHuggingfaceImageDataset):
-    _REGISTRY_CONFIGS = [
-        AtriaHuggingfaceDatasetConfig(
-            config_name="plain_text", hf_repo="uoft-cs/cifar10"
-        )
-    ]
+    _REGISTRY_CONFIGS = {
+        "plain_text": AtriaHuggingfaceDatasetConfig(hf_repo="uoft-cs/cifar10")
+    }
 
     def _input_transform(self, sample: dict[str, Any]) -> ImageInstance:
         label = Label(

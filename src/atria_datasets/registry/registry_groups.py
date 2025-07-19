@@ -1,3 +1,4 @@
+from atria_core.utilities.auto_config import auto_config
 from atria_registry import RegistryGroup
 
 
@@ -20,40 +21,43 @@ class DatasetRegistryGroup(RegistryGroup):
         Returns:
             function: A decorator function for registering the module with configurations.
         """
-        from atria_core.utilities.auto_config import auto_config
 
         def decorator(decorated_class):
             from atria_core.types import AtriaDatasetConfig
 
             if hasattr(decorated_class, "_REGISTRY_CONFIGS"):
                 configs = decorated_class._REGISTRY_CONFIGS
-                assert isinstance(configs, list), (
-                    f"Expected _REGISTRY_CONFIGS on {decorated_class.__name__} to be a list, "
+                assert isinstance(configs, dict), (
+                    f"Expected _REGISTRY_CONFIGS on {decorated_class.__name__} to be a dict, "
                     f"but got {type(configs).__name__} instead."
                 )
                 assert configs, (
                     f"{decorated_class.__name__} must provide at least one configuration in _REGISTRY_CONFIGS."
                 )
-                for config in configs:
+                for key, config in configs.items():
                     assert isinstance(config, AtriaDatasetConfig), (
-                        f"Configuration {config} must be a subclass of AtriaDatasetConfig."
+                        f"Configuration {config} must be a dict."
                     )
-                    config.dataset_name = dataset_name
+                    module_name = dataset_name
                     self.register_modules(
                         module_paths=decorated_class,
-                        module_names=config.dataset_name + "/" + config.config_name,
+                        module_names=module_name + "/" + key,
+                        exclude_fields=["dataset_name", "config_name"],
                         **config.model_dump(),
                         **kwargs,
                     )
-                return auto_config()(decorated_class)
+                return auto_config(exclude=["dataset_name", "config_name"])(
+                    decorated_class
+                )
             else:
-                module_name = dataset_name
                 self.register_modules(
                     module_paths=decorated_class,
-                    module_names=module_name,
-                    dataset_name=dataset_name,
+                    module_names=dataset_name,
+                    exclude_fields=["dataset_name", "config_name"],
                     **kwargs,
                 )
-                return auto_config()(decorated_class)
+                return auto_config(exclude=["dataset_name", "config_name"])(
+                    decorated_class
+                )
 
         return decorator

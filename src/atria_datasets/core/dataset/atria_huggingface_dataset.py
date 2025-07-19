@@ -72,6 +72,24 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         _download_manager (DownloadManager): The download manager for the datasets.
     """
 
+    def __init__(
+        self,
+        data_urls: str | list[str] | dict[str, str] | dict[str, tuple] | None = None,
+        max_train_samples: int | None = None,
+        max_validation_samples: int | None = None,
+        max_test_samples: int | None = None,
+        hf_repo: str | None = None,
+    ):
+        super().__init__(
+            data_urls=data_urls,
+            max_train_samples=max_train_samples,
+            max_validation_samples=max_validation_samples,
+            max_test_samples=max_test_samples,
+        )
+        self._hf_repo = hf_repo
+        self._dataset_builder = None
+        self._hf_split_generators = None
+
     def prepare_downloads(self, data_dir: str, access_token: str | None = None) -> None:
         """
         Prepares the dataset by downloading and extracting files if data URLs are provided.
@@ -131,7 +149,7 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
             from datasets import load_dataset_builder
 
             self._dataset_builder = load_dataset_builder(
-                self.config.hf_repo, name=self._config_name, cache_dir=data_dir
+                self._hf_repo, name=self._config_name, cache_dir=data_dir
             )
         return self._dataset_builder
 
