@@ -29,7 +29,7 @@ import json
 from abc import abstractmethod
 from collections.abc import Callable, Generator, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, cast
+from typing import TYPE_CHECKING, Any, Generic
 
 from atria_core.constants import _DEFAULT_ATRIA_DATASETS_CACHE_DIR
 from atria_core.logger import get_logger
@@ -42,9 +42,7 @@ from atria_core.types import (
     SplitConfig,
 )
 from atria_core.utilities.repr import RepresentationMixin
-from atria_registry.constants import _PROVIDER_NAME
 from gotrue import Optional
-from omegaconf import OmegaConf
 
 from atria_datasets.core.constants import _DEFAULT_DOWNLOAD_PATH
 from atria_datasets.core.dataset.exceptions import SplitNotFoundError
@@ -118,10 +116,15 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin):
         self,
         dataset_name: str | None = None,
         config_name: str = "main",
-        data_urls: str | list[str] | dict[str, str] | dict[str, tuple] | None = None,
-        max_train_samples: int | None = None,
-        max_validation_samples: int | None = None,
-        max_test_samples: int | None = None,
+        data_urls: str
+        | list[str]
+        | dict[str, str]
+        | dict[str, tuple]
+        | None = None,  # these get passed to the config
+        max_train_samples: int | None = None,  # these get passed to the config
+        max_validation_samples: int | None = None,  # these get passed to the config
+        max_test_samples: int | None = None,  # these get passed to the config
+        **kwargs,  # these get passed to the config
     ):
         """
         Initialize the AtriaDataset.
@@ -146,10 +149,12 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin):
         # Configuration parameters
         self._dataset_name = dataset_name or self.__class__.__name__.lower()
         self._config_name = config_name or "main"
-        self._data_urls = data_urls
+        self._data_urls = data_urls or None
         self._max_train_samples = max_train_samples
         self._max_validation_samples = max_validation_samples
         self._max_test_samples = max_test_samples
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
         # Internal state management
         self._data_dir = self._setup_data_dir()
@@ -204,7 +209,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin):
         Returns:
             8-character hash string based on configuration content
         """
-        config_dict = OmegaConf.to_container(self.config, resolve=True)
+        config_dict = self.config
         config_dict.pop("_target_", None)
         config_str = json.dumps(config_dict, sort_keys=True)
         return hashlib.sha256(config_str.encode()).hexdigest()[:8]
@@ -249,7 +254,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin):
         name: str,
         split: DatasetSplitType | None = None,
         data_dir: str | None = None,
-        provider: str | None = _PROVIDER_NAME,
+        provider: str | None = None,
         preprocess_transform: Callable | None = None,
         shard_storage_type: FileStorageType | None = None,
         access_token: str | None = None,
@@ -297,14 +302,6 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin):
         dataset: AtriaDataset[T_BaseDataInstance] = DATASET.load_from_registry(
             module_name=name, provider=provider, return_config=False, **build_kwargs
         )
-
-        # Validate data model compatibility
-        assert dataset.__data_model__ == cls.__data_model__, (
-            f"Data model mismatch. Expected: {cls.__data_model__}, "
-            f"Got: {dataset.__data_model__}."
-        )
-
-        # Build the requested split(s)
         dataset.build_split(
             split=split,
             data_dir=data_dir,
@@ -316,7 +313,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin):
             allowed_keys=allowed_keys,
             **(sharded_storage_kwargs or {}),
         )
-        return cast(AtriaDataset[T_BaseDataInstance], dataset)
+        return dataset
 
     @classmethod
     def load_from_hub(
@@ -585,7 +582,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin):
 
             if self._data_urls is not None:
                 self._downloaded_files = download_manager.download_and_extract(
-                    str(self._data_urls)
+                    self._data_urls
                 )
 
             self._downloads_prepared = True
@@ -607,10 +604,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin):
                 yaml.dump(data, f, default_flow_style=False)
 
         # Save configuration
-        write_yaml_file(
-            self._storage_dir / self.__default_config_path__,
-            OmegaConf.to_container(self.config),
-        )
+        write_yaml_file(self._storage_dir / self.__default_config_path__, self.config)
 
         # Save metadata
         write_yaml_file(
@@ -764,12 +758,6 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin):
         )
 
         for current_split in splits:
-            try:
-                split_config = self.get_split_config(split=current_split)
-            except SplitNotFoundError:
-                logger.warning(f"Split {current_split.value} not found. Skipping.")
-                continue
-
             split_exists = storage_manager.split_exists(split=current_split)
 
             if split_exists and overwrite_existing:
@@ -784,6 +772,13 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin):
                 self.prepare_downloads(
                     data_dir=str(self._data_dir), access_token=access_token
                 )
+
+                try:
+                    split_config = self.get_split_config(split=current_split)
+                except SplitNotFoundError:
+                    logger.warning(f"Split {current_split.value} not found. Skipping.")
+                    continue
+
                 self.save_dataset_info()
 
                 try:

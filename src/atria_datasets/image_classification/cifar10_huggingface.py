@@ -2,6 +2,7 @@ from typing import Any
 
 from atria_core.types import (
     AtriaHuggingfaceDatasetConfig,
+    ClassificationGT,
     GroundTruth,
     Image,
     ImageInstance,
@@ -23,5 +24,6 @@ class HuggingfaceCifar10(AtriaHuggingfaceImageDataset):
             name=self.metadata.dataset_labels.classification[sample["label"]],
         )
         return ImageInstance(
-            image=Image(content=sample["img"]), gt=GroundTruth(classification=label)
+            image=Image(content=sample["img"]),
+            gt=GroundTruth(classification=ClassificationGT(label=label)),
         )

@@ -24,4 +24,4 @@ fi
 
 export PYTHONPATH="$PROJECT_ROOT/src:"
 
-python $SCRIPT_DIR/../src/atria_datasets/build_registry.py
+uv run $SCRIPT_DIR/../src/atria_datasets/build_registry.py

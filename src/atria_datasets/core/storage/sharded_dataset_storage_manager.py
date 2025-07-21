@@ -223,7 +223,6 @@ class ShardedDatasetStorageManager:
             start_idx = i * self._max_shard_size
             end_idx = min((i + 1) * self._max_shard_size, total_len)
             shard_df = df.iloc[start_idx:end_idx]
-            print("preprocess_transform", preprocess_transform)
             actor = ShardWriterActor.options(memory=self._max_memory_per_actor).remote(  # type: ignore
                 shard_df=shard_df,
                 data_model=data_model,

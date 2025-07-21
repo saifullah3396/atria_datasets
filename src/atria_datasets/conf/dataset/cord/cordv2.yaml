@@ -1,0 +1,12 @@
+_target_: atria_datasets.ser.cord.CORD
+_partial_: false
+data_urls:
+- https://huggingface.co/datasets/naver-clova-ix/cord-v2/resolve/main/data/train-00000-of-00004-b4aaeceff1d90ecb.parquet
+- https://huggingface.co/datasets/naver-clova-ix/cord-v2/resolve/main/data/train-00001-of-00004-7dbbe248962764c5.parquet
+- https://huggingface.co/datasets/naver-clova-ix/cord-v2/resolve/main/data/train-00002-of-00004-688fe1305a55e5cc.parquet
+- https://huggingface.co/datasets/naver-clova-ix/cord-v2/resolve/main/data/train-00003-of-00004-2d0cd200555ed7fd.parquet
+- https://huggingface.co/datasets/naver-clova-ix/cord-v2/resolve/main/data/validation-00000-of-00001-cc3c5779fe22e8ca.parquet
+- https://huggingface.co/datasets/naver-clova-ix/cord-v2/resolve/main/data/test-00000-of-00001-9c204eb3f4e11791.parquet
+max_train_samples: null
+max_validation_samples: null
+max_test_samples: null

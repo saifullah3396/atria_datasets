@@ -18,73 +18,92 @@ Version: 1.0.0
 License: MIT
 """
 
-import atria_datasets.registry  # noqa: F401 # Import the registry to ensure it is initialized
-from atria_datasets.core.dataset.atria_dataset import (
-    AtriaDataset,
-    AtriaDocumentDataset,
-    AtriaImageDataset,
-)
-from atria_datasets.core.dataset.atria_huggingface_dataset import (
-    AtriaHuggingfaceDataset,
-    AtriaHuggingfaceDocumentDataset,
-    AtriaHuggingfaceImageDataset,
-)
-from atria_datasets.core.dataset.split_iterator import SplitIterator
-from atria_datasets.core.dataset_splitters.standard_splitter import StandardSplitter
-from atria_datasets.core.download_manager.download_file_info import DownloadFileInfo
-from atria_datasets.core.download_manager.download_manager import DownloadManager
-from atria_datasets.core.download_manager.file_downloader import (
-    FileDownloader,
-    FTPFileDownloader,
-    GoogleDriveDownloader,
-    HTTPDownloader,
-)
-from atria_datasets.core.storage.deltalake_reader import DeltalakeReader
-from atria_datasets.core.storage.deltalake_storage_manager import (
-    DeltalakeStorageManager,
-)
-from atria_datasets.core.storage.msgpack_shard_writer import (
-    MsgpackFileWriter,
-    MsgpackShardWriter,
-)
-from atria_datasets.core.storage.sharded_dataset_storage_manager import (
-    ShardedDatasetStorageManager,
-)
-from atria_datasets.core.storage.utilities import FileStorageType
-from atria_datasets.registry import (
-    BATCH_SAMPLER,
-    DATA_PIPELINE,
-    DATASET,  # noqa
-)
+# ruff: noqa
 
-from .image_classification.cifar10 import Cifar10
-from .image_classification.cifar10_huggingface import HuggingfaceCifar10
+from typing import TYPE_CHECKING
 
-__all__ = [
-    "DATASET",
-    "DATA_PIPELINE",
-    "BATCH_SAMPLER",
-    "AtriaDataset",
-    "AtriaImageDataset",
-    "AtriaDocumentDataset",
-    "AtriaHuggingfaceDataset",
-    "AtriaHuggingfaceImageDataset",
-    "AtriaHuggingfaceDocumentDataset",
-    "SplitIterator",
-    "StandardSplitter",
-    "DownloadManager",
-    "DownloadFileInfo",
-    "FileDownloader",
-    "HTTPDownloader",
-    "GoogleDriveDownloader",
-    "FTPFileDownloader",
-    "DeltalakeStorageManager",
-    "DeltalakeReader",
-    "MsgpackFileWriter",
-    "MsgpackShardWriter",
-    "ShardedDatasetStorageManager",
-    "FileStorageType",
-    # add image classification datasets
-    "Cifar10",
-    "HuggingfaceCifar10",
-]
+import lazy_loader as lazy
+
+# Ensure registry is initialized immediately
+import atria_datasets.registry  # noqa: F401
+
+if TYPE_CHECKING:
+    import atria_datasets.registry  # noqa: F401 # Import the registry to ensure it is initialized
+    from atria_datasets.core.dataset.atria_dataset import (
+        AtriaDataset,
+        AtriaDocumentDataset,
+        AtriaImageDataset,
+    )
+    from atria_datasets.core.dataset.atria_huggingface_dataset import (
+        AtriaHuggingfaceDataset,
+        AtriaHuggingfaceDocumentDataset,
+        AtriaHuggingfaceImageDataset,
+    )
+    from atria_datasets.core.dataset.split_iterator import SplitIterator
+    from atria_datasets.core.dataset_splitters.standard_splitter import StandardSplitter
+    from atria_datasets.core.download_manager.download_file_info import DownloadFileInfo
+    from atria_datasets.core.download_manager.download_manager import DownloadManager
+    from atria_datasets.core.download_manager.file_downloader import (
+        FileDownloader,
+        FTPFileDownloader,
+        GoogleDriveDownloader,
+        HTTPDownloader,
+    )
+    from atria_datasets.core.storage.deltalake_reader import DeltalakeReader
+    from atria_datasets.core.storage.deltalake_storage_manager import (
+        DeltalakeStorageManager,
+    )
+    from atria_datasets.core.storage.msgpack_shard_writer import (
+        MsgpackFileWriter,
+        MsgpackShardWriter,
+    )
+    from atria_datasets.core.storage.sharded_dataset_storage_manager import (
+        ShardedDatasetStorageManager,
+    )
+    from atria_datasets.core.storage.utilities import FileStorageType
+    from atria_datasets.registry import (
+        BATCH_SAMPLER,
+        DATA_PIPELINE,
+        DATASET,  # noqa
+    )
+
+
+__getattr__, __dir__, __all__ = lazy.attach(
+    __name__,
+    submodules={"registry"},
+    submod_attrs={
+        "core.dataset.atria_dataset": [
+            "AtriaDataset",
+            "AtriaDocumentDataset",
+            "AtriaImageDataset",
+        ],
+        "core.dataset.atria_huggingface_dataset": [
+            "AtriaHuggingfaceDataset",
+            "AtriaHuggingfaceDocumentDataset",
+            "AtriaHuggingfaceImageDataset",
+        ],
+        "core.dataset.split_iterator": ["SplitIterator"],
+        "core.dataset_splitters.standard_splitter": ["StandardSplitter"],
+        "core.download_manager.download_file_info": ["DownloadFileInfo"],
+        "core.download_manager.download_manager": ["DownloadManager"],
+        "core.download_manager.file_downloader": [
+            "FileDownloader",
+            "FTPFileDownloader",
+            "GoogleDriveDownloader",
+            "HTTPDownloader",
+        ],
+        "core.storage.deltalake_reader": ["DeltalakeReader"],
+        "core.storage.deltalake_storage_manager": ["DeltalakeStorageManager"],
+        "core.storage.msgpack_shard_writer": [
+            "MsgpackFileWriter",
+            "MsgpackShardWriter",
+        ],
+        "core.storage.sharded_dataset_storage_manager": [
+            "ShardedDatasetStorageManager"
+        ],
+        "core.storage.utilities": ["FileStorageType"],
+        "registry": ["BATCH_SAMPLER", "DATA_PIPELINE", "DATASET"],
+        "image_classification.cifar10": ["Cifar10"],
+        "image_classification.cifar10_huggingface": ["HuggingfaceCifar10"],
+    },
+)

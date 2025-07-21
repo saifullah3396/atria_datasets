@@ -53,9 +53,10 @@ class BatchSamplersDict(BaseModel):
         Returns:
             The validated value.
         """
-        from torch.utils.data import BatchSampler  # type: ignore[import-not-found]
 
         if value is not None:
+            from torch.utils.data import BatchSampler  # type: ignore[import-not-found]
+
             assert isinstance(value, BatchSampler), (
                 f"Expected BatchSampler, got {type(value)}"
             )

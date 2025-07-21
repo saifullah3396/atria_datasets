@@ -74,6 +74,8 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
 
     def __init__(
         self,
+        dataset_name: str | None = None,
+        config_name: str = "main",
         data_urls: str | list[str] | dict[str, str] | dict[str, tuple] | None = None,
         max_train_samples: int | None = None,
         max_validation_samples: int | None = None,
@@ -81,6 +83,8 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         hf_repo: str | None = None,
     ):
         super().__init__(
+            dataset_name=dataset_name,
+            config_name=config_name,
             data_urls=data_urls,
             max_train_samples=max_train_samples,
             max_validation_samples=max_validation_samples,
@@ -145,7 +149,7 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         Returns:
             datasets.DatasetBuilder: The Hugging Face dataset builder.
         """
-        if not hasattr(self, "_dataset_builder"):
+        if self._dataset_builder is None:
             from datasets import load_dataset_builder
 
             self._dataset_builder = load_dataset_builder(
@@ -173,6 +177,8 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         """
 
         if "packaged_modules" in str(self._dataset_builder.__module__):
+            import datasets
+
             # If it is a packaged module, use the Hugging Face download manager.
             return datasets.DownloadManager(
                 dataset_name=self._config_name,

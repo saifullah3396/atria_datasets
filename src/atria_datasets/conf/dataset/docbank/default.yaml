@@ -1,0 +1,18 @@
+_target_: atria_datasets.ser.docbank.DocBankLER
+_partial_: false
+data_urls:
+- https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_ori_img.zip.001
+- https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_ori_img.zip.002
+- https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_ori_img.zip.003
+- https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_ori_img.zip.004
+- https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_ori_img.zip.005
+- https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_ori_img.zip.006
+- https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_ori_img.zip.007
+- https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_ori_img.zip.008
+- https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_ori_img.zip.009
+- https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_txt.zip
+- https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/MSCOCO_Format_Annotation.zip
+max_train_samples: null
+max_validation_samples: null
+max_test_samples: null
+max_words_per_sample: 4000

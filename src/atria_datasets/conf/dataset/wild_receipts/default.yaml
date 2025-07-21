@@ -1,0 +1,7 @@
+_target_: atria_datasets.ser.wild_receipts.WildReceipts
+_partial_: false
+data_urls: https://download.openmmlab.com/mmocr/data/wildreceipt.tar
+max_train_samples: null
+max_validation_samples: null
+max_test_samples: null
+apply_reading_order_correction: true

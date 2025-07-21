@@ -156,7 +156,6 @@ class DeltalakeStorageManager:
         return SplitIterator(
             split=split,
             base_iterator=base_iterator,
-            input_transform=lambda x: x,
             output_transform=output_transform,
             data_model=data_model,
         )
@@ -203,7 +202,7 @@ class DeltalakeStorageManager:
         from pandarallel import pandarallel
 
         pandarallel.initialize(
-            nb_workers=self._num_processes, progress_bar=False, verbose=0
+            nb_workers=self._num_processes, progress_bar=True, verbose=0
         )
 
         split_dir = self.split_dir(split=split_iterator.split)

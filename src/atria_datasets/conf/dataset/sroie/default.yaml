@@ -1,0 +1,9 @@
+_target_: atria_datasets.ser.sroie.SROIE
+_partial_: false
+data_urls:
+  sroie:
+  - https://drive.google.com/file/d/1ZyxAw1d-9UvhgNLGRvsJK4gBCMf0VpGD/view?usp=sharing
+  - sroie.zip
+max_train_samples: null
+max_validation_samples: null
+max_test_samples: null

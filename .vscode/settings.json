@@ -5,30 +5,20 @@
         "**/.hg": true,
         "**/CVS": true,
         "**/**__pycache__": true,
-        "atria.egg-info": true,
-        ".pytest_cache": true,
-        ".mypy_cache": true,
-        ".venv": true,
-        "htmlcov": true,
-        ".ruff_cache": true,
-        ".coverage": true,
-        ".gitignore": true,
-        ".gitmodules": true,
-        "uv.lock": true,
+        "**/**atria.egg-info": true,
+        "**/**.pytest_cache": true,
+        "**/**.mypy_cache": true,
+        "**/**.venv": true,
+        "**/**.htmlcov": true,
+        "**/**.ruff_cache": true,
+        "**/**.coverage": true,
+        "**/**.gitignore": true,
+        "**/**.gitmodules": false,
+        "**/**uv.lock": true,
         ".copilot-docstring-instructions.md": true,
     },
     "python.analysis.indexing": true,
     "python.analysis.autoImportCompletions": true,
-    "emeraldwalk.runonsave": {
-        "commands": [
-            {
-                "match": "\\.py$",
-                "isAsync": true,
-                // Use the full path from above in case it can't find it
-                "cmd": "autoflake --in-place --remove-all-unused-imports \"${file}\""
-            },
-        ]
-    },
     "[python]": {
         "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.formatOnSave": true,
@@ -59,13 +49,17 @@
         }
     ],
     "python.analysis.include": [
-        "./src",
-        "../atria_registry/src",
+        "./atria",
+        "./atria_core/src",
+        "./atria_datasets/src",
+        "./atria_registry/src",
+
     ],
     "python.analysis.extraPaths": [
-        "./src",
-        "../atria_registry/src",
+        "./atria",
+        "./atria_core/src",
+        "./atria_datasets/src",
+        "./atria_registry/src",
     ],
-    "python-envs.pythonProjects": [],
     "python.defaultInterpreterPath": "./.venv/bin/python",
 }

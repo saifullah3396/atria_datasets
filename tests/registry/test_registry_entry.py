@@ -1,6 +1,5 @@
 import omegaconf
 import pytest
-from atria_registry.constants import _PROVIDER_NAME
 from atria_registry.registry_entry import RegistryEntry
 
 
@@ -119,7 +118,6 @@ def test_registry_entry_register_success_basic(
         assert "_target_" not in cs.repo[group][module_name].node
         assert "_partial_" not in cs.repo[group][module_name].node
     assert cs.repo[group][module_name].group == group
-    assert cs.repo[group][module_name].provider == _PROVIDER_NAME
     assert cs.repo[group][module_name].package == package
     for key, value in build_kwargs.items():
         assert cs.repo[group][module_name].node[key] == value

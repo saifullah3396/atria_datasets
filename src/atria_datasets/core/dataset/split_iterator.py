@@ -60,7 +60,7 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
         split: DatasetSplitType,
         base_iterator: Sequence | Generator,
         data_model: type[T_BaseDataInstance],
-        input_transform: Callable,
+        input_transform: Callable | None = None,
         output_transform: Callable | None = None,
         max_len: int | None = None,
     ):
@@ -75,7 +75,7 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
             output_transform=output_transform,
             apply_output_transform=self._apply_output_transform,
         )
-        self._is_generator = inspect.isgeneratorfunction(base_iterator)
+        self._is_generator = inspect.isgenerator(base_iterator)
         if not self._is_generator:
             assert hasattr(self._base_iterator, "__len__"), (
                 f"T he base iterator {self._base_iterator} must implement __len__ to support indexing. "

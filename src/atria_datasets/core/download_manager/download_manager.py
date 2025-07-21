@@ -81,7 +81,9 @@ class DownloadManager(RepresentationMixin):
                     "Google Drive URLs are not supported in list format. Use dictionary format instead."
                 )
             data_urls = {Path(url).name: url for url in data_urls}
-        assert isinstance(data_urls, dict), "data_urls must be a list or a dictionary"
+        assert isinstance(data_urls, dict), (
+            f"data_urls must be a list or a dictionary, got {data_urls}"
+        )
         download_file_infos = []
         for download_path, url in data_urls.items():
             if isinstance(url, tuple):

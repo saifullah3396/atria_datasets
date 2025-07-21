@@ -42,8 +42,8 @@ logger = get_logger(__name__)
 class InstanceTransform:
     def __init__(
         self,
-        input_transform: Callable,
         data_model: T_BaseDataInstance,
+        input_transform: Callable | None = None,
         output_transform: Callable | None = None,
         apply_output_transform: bool = True,
     ):
@@ -52,9 +52,10 @@ class InstanceTransform:
         self._output_transform = output_transform
         self._apply_output_transform = apply_output_transform
 
-    def __call__(self, index: int, sample: Any) -> BaseDataInstance:
+    def __call__(self, index: int, data_instance: Any) -> BaseDataInstance:
         # apply input transformation
-        data_instance: BaseDataInstance = self._input_transform(sample)
+        if self._input_transform is not None:
+            data_instance: BaseDataInstance = self._input_transform(data_instance)
 
         # assert that the transformed instance is of the expected data model type
         assert isinstance(data_instance, self._data_model), (
