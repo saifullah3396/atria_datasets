@@ -197,7 +197,6 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             8-character hash string based on configuration content
         """
         config_dict = self.config
-        config_dict.pop("_target_", None)
         config_str = json.dumps(config_dict, sort_keys=True)
         return hashlib.sha256(config_str.encode()).hexdigest()[:8]
 
