@@ -457,6 +457,7 @@ class DeltalakeStorageManager:
         return files_src_tgt
 
     def _write(self, split_iterator: "SplitIterator") -> Path:
+        import itertools
         import multiprocessing as mp
 
         import deltalake
@@ -481,14 +482,25 @@ class DeltalakeStorageManager:
                 mode=mode,
             )
 
+        try:
+            total = len(split_iterator)
+        except RuntimeError:
+            total = None
+
+        # Choose the iterator, applying islice if _max_len is set
+        iterator = iter(split_iterator)
+        if total is not None:
+            iterator = itertools.islice(
+                iterator,
+                total,  # type: ignore
+            )
+
         with mp.Pool(self._num_processes) as pool:
             batch = []
             for result in tqdm.tqdm(
-                pool.imap_unordered(
-                    SerializerWorker(split_iterator._tf), split_iterator
-                ),
+                pool.imap_unordered(SerializerWorker(split_iterator._tf), iterator),
                 desc="Writing to Deltalake",
-                total=len(split_iterator),
+                total=total,
                 unit="rows",
             ):
                 batch.append(result)

@@ -238,10 +238,10 @@ class DownloadManager(RepresentationMixin):
         Returns:
             Dict[str, Path]: A dictionary mapping file names to their final output paths.
         """
-        if extract:
-            for download_file_info in self._prepare_urls_and_dirs(data_urls):
-                download_file_info.update_extract_path()
         download_file_infos = self._prepare_urls_and_dirs(data_urls)
+        if extract:
+            for download_file_info in download_file_infos:
+                download_file_info.update_extract_path()
         if any(
             not download_file_info.is_download_completed
             for download_file_info in download_file_infos

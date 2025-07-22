@@ -11,10 +11,12 @@ from atria_datasets.document_classification.tobacco3482 import *  # noqa
 # from atria_datasets.layout_analysis.icdar2019 import *  # noqa
 # from atria_datasets.layout_analysis.publaynet import *  # noqa
 # from atria_datasets.pipelines.atria_data_pipeline import *  # noqa
-# from atria_datasets.ser.cord import *  # noqa
+from atria_datasets.ser.cord import *  # noqa
+
 # from atria_datasets.ser.docbank import *  # noqa
 # from atria_datasets.ser.docile import *  # noqa
-# from atria_datasets.ser.funsd import *  # noqa
+from atria_datasets.ser.funsd import *  # noqa
+
 # from atria_datasets.ser.sroie import *  # noqa
 # from atria_datasets.ser.wild_receipts import *  # noqa
 # from atria_datasets.table_extraction.fintabnet import *  # noqa

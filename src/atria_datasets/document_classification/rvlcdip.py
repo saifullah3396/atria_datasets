@@ -83,10 +83,15 @@ _CLASSES = [
 class RvlCdip(AtriaDocumentDataset):
     """Ryerson Vision Lab Complex Document Information Processing dataset."""
 
-    __extract_downloads__ = False
     _REGISTRY_CONFIGS = {
         "image": {"load_ocr": False},
         "image_with_ocr": {"load_ocr": True},
+        "image_with_ocr_1k": {
+            "load_ocr": True,
+            "max_train_samples": 1000,
+            "max_validation_samples": 1000,
+            "max_test_samples": 1000,
+        },
     }
 
     def __init__(
@@ -131,13 +136,13 @@ class RvlCdip(AtriaDocumentDataset):
         self, split: DatasetSplitType, data_dir: str
     ) -> Iterable[tuple[Path, Path, int]]:
         class SplitIterator(Iterable[tuple[Path, Path, int]]):
-            def __init__(self, split: DatasetSplitType, data_dir: str):
+            def __init__(self, split: DatasetSplitType, data_dir: str, type: str):
                 if split == DatasetSplitType.train:
-                    split_file_paths = Path(data_dir) / "labels/main/train.txt"
+                    split_file_paths = Path(data_dir) / f"labels/{type}/train.txt"
                 elif split == DatasetSplitType.test:
-                    split_file_paths = Path(data_dir) / "labels/main/test.txt"
+                    split_file_paths = Path(data_dir) / f"labels/{type}/test.txt"
                 elif split == DatasetSplitType.validation:
-                    split_file_paths = Path(data_dir) / "labels/main/val.txt"
+                    split_file_paths = Path(data_dir) / f"labels/{type}/val.txt"
                 with open(split_file_paths) as f:
                     self.split_file_paths = f.read().splitlines()
                 self.image_data_dir = data_dir / _IMAGE_DATA_NAME / "images"
@@ -155,7 +160,7 @@ class RvlCdip(AtriaDocumentDataset):
             def __len__(self) -> int:
                 return len(self.split_file_paths)
 
-        return SplitIterator(split=split, data_dir=Path(data_dir))
+        return SplitIterator(split=split, data_dir=Path(data_dir), type=self.type)
 
     def _input_transform(self, sample: tuple[Path, Path, int]) -> DocumentInstance:
         image_file_path, ocr_file_path, label = sample
@@ -163,7 +168,9 @@ class RvlCdip(AtriaDocumentDataset):
         return DocumentInstance(
             sample_id=Path(image_file_path).name,
             image=Image(file_path=image_file_path),
-            ocr=OCR(file_path=ocr_file_path, ocr_type=OCRType.tesseract),
+            ocr=OCR(file_path=ocr_file_path, type=OCRType.tesseract)
+            if self.load_ocr
+            else None,
             gt=GroundTruth(
                 classification=ClassificationGT(
                     label=Label(value=int(label), name=_CLASSES[int(label)])

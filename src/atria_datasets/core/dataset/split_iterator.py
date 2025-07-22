@@ -201,6 +201,8 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
             if self._max_len is not None:
                 return min(self._max_len, len(iterator))  # type: ignore
             return len(iterator)  # type: ignore
+        elif self._max_len is not None:
+            return self._max_len
         raise RuntimeError(
             "The dataset does not support length calculation. "
             "Please implement the `__len__` method in your dataset class."

@@ -9,27 +9,18 @@ torch.set_printoptions(profile="short", threshold=10)
 
 def main(
     name,
-    max_samples: int | None = None,
     access_token: str | None = None,
     overwrite_existing_cached: bool = False,
     overwrite_existing_shards: bool = False,
 ):
     from atria_datasets import AtriaDataset
 
-    if max_samples is not None:
-        logger.info(f"Loading dataset: {name} with max_samples={max_samples}")
-    else:
-        logger.info(f"Loading dataset: {name}")
+    logger.info(f"Loading dataset: {name}")
     dataset = AtriaDataset.load_from_registry(
         name=name,
         overwrite_existing_cached=overwrite_existing_cached,
         overwrite_existing_shards=overwrite_existing_shards,
         access_token=access_token,
-        build_kwargs={
-            "max_train_samples": max_samples,
-            "max_validation_samples": max_samples,
-            "max_test_samples": max_samples,
-        },
     )
     logger.info(f"Loaded dataset: {dataset}")
     for sample in dataset.train:
@@ -38,7 +29,7 @@ def main(
 
     if "/" in name:
         name = name.split("/")[0]
-    dataset.upload_to_hub(name=name)
+    # dataset.upload_to_hub(name=name)
 
 
 if __name__ == "__main__":

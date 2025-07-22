@@ -8,12 +8,12 @@ DATASET_NAME=$1
 
 declare -a available_datasets=(
     # "tobacco3482/image_with_ocr"
-    "rvlcdip/image_with_ocr"
-    # "mnist/mnist"
-    # "cord/cordv2"
-    # "funsd/default"
-    # "sroie/default"
-    # "wild_receipts/default"
+    # "rvlcdip/image_with_ocr_1k"
+    "mnist/mnist"
+    "cord"
+    "funsd"
+    "sroie/default"
+    "wild_receipts/default"
     # "docile/kile"
     # "docbank/default"
     # "docvqa/with_msr_ocr"
@@ -37,7 +37,7 @@ prepare_dataset() {
             set -x
             PYTHONPATH=$PYTHONPATH python -m atria_datasets.prepare_dataset \
                 $dataset_name \
-                --max_samples=100 \
+                --overwrite-existing-cached \
                 $additional_args
             set +x
             return 0

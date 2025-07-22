@@ -255,6 +255,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         from atria_datasets import DATASET
 
         logger.info(f"Loading dataset {name} from registry.")
+        build_kwargs = build_kwargs or {}
         dataset: AtriaDataset[T_BaseDataInstance] = DATASET.load_from_registry(
             module_name=name, provider=provider, return_config=False, **build_kwargs
         )
@@ -684,6 +685,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
                         data_model=self.data_model,
                         input_transform=self._input_transform,
                         base_iterator=self._split_iterator(split, data_dir),
+                        max_len=self.get_max_split_samples(split),
                     )
                 )
             else:
@@ -710,6 +712,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
                 data_model=self.data_model,
                 input_transform=self._input_transform,
                 base_iterator=self._split_iterator(split, data_dir),
+                max_len=self.get_max_split_samples(split),
             )
 
     def _input_transform(self, sample: Any | T_BaseDataInstance) -> T_BaseDataInstance:

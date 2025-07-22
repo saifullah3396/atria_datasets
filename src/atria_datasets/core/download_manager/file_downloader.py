@@ -197,32 +197,84 @@ class HTTPDownloader(FileDownloader):
 
     def _download(self, parsed_url: ParseResult, destination_path: str) -> None:
         """
-        Downloads a file from an HTTP/HTTPS URL.
+        Downloads a file from an HTTP/HTTPS URL with retry logic.
 
         Args:
             parsed_url (ParseResult): The parsed URL of the file.
             destination_path (str): The path where the file will be saved.
 
         Raises:
-            Exception: If the HTTP request fails.
+            Exception: If the HTTP request fails after all retries.
         """
+        import os
+        import time
 
         import requests
+        import tqdm
 
-        try:
-            from fsspec import url_to_fs
-            from fsspec.callbacks import TqdmCallback
+        max_retries = 3
+        retry_delay = 2  # seconds
+        backoff_multiplier = 2
 
+        for attempt in range(max_retries + 1):
             try:
-                logger.info(f"Downloading {parsed_url.geturl()} to {destination_path}")
-                fs, path = url_to_fs(parsed_url.geturl())
-                fs.get_file(path, destination_path, callback=TqdmCallback())
-            except Exception as e:
-                logger.error(f"Error downloading {parsed_url.geturl()}: {e}")
-                raise
-        except requests.RequestException as e:
-            logger.error(f"Error downloading {parsed_url.geturl()}: {e}")
-            raise
+                headers = {"User-Agent": self.user_agent} if self.user_agent else {}
+                response = requests.get(
+                    parsed_url.geturl(),
+                    headers=headers,
+                    proxies=self.proxies,
+                    stream=True,
+                    timeout=self.timeout,
+                )
+
+                if response.status_code == 200:
+                    total_size = int(response.headers.get("Content-Length", 0))
+                    block_size = 1024 * 1024
+
+                    with (
+                        open(destination_path, "wb") as f,
+                        tqdm.tqdm(
+                            total=total_size,
+                            unit="B",
+                            unit_scale=True,
+                            unit_divisor=1024,
+                            desc=os.path.basename(destination_path),
+                        ) as progress_bar,
+                    ):
+                        for chunk in response.iter_content(chunk_size=block_size):
+                            if chunk:
+                                f.write(chunk)
+                                progress_bar.update(len(chunk))
+
+                    logger.debug(
+                        f"Downloaded {parsed_url.geturl()} to {destination_path}"
+                    )
+                    return  # Success, exit retry loop
+                else:
+                    raise requests.HTTPError(
+                        f"HTTP {response.status_code}: Failed to download {parsed_url.geturl()}"
+                    )
+
+            except (requests.RequestException, OSError) as e:
+                if attempt == max_retries:
+                    logger.error(
+                        f"Failed to download {parsed_url.geturl()} after {max_retries + 1} attempts: {e}"
+                    )
+                    raise
+
+                wait_time = retry_delay * (backoff_multiplier**attempt)
+                logger.warning(
+                    f"Download attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s..."
+                )
+
+                # Clean up partial file if it exists
+                if os.path.exists(destination_path):
+                    try:
+                        os.remove(destination_path)
+                    except OSError:
+                        pass
+
+                time.sleep(wait_time)
 
 
 class GoogleDriveDownloader(FileDownloader):

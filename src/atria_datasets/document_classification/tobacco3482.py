@@ -1,4 +1,4 @@
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from pathlib import Path
 from random import shuffle
 
@@ -95,7 +95,7 @@ class Tobacco3482(AtriaDocumentDataset):
     def _split_iterator(
         self, split: DatasetSplitType, data_dir: str
     ) -> Iterable[tuple[Path, Path, int]]:
-        class Iterator(Iterable[tuple[Path, Path, int]]):
+        class SplitIterator:
             def __init__(self, split: DatasetSplitType, data_dir: str):
                 if split == DatasetSplitType.train:
                     split_file_paths = Path(data_dir) / "train.txt"
@@ -107,7 +107,7 @@ class Tobacco3482(AtriaDocumentDataset):
                 self.image_data_dir = data_dir / _IMAGE_DATA_NAME
                 self.ocr_data_dir = data_dir / _OCR_DATA_NAME
 
-            def __iter__(self) -> Iterator[DocumentInstance]:
+            def __iter__(self):
                 for image_file_path in self.split_file_paths:
                     label_index = _CLASSES.index(Path(image_file_path).parent.name)
                     ocr_file_path = Path(self.ocr_data_dir) / image_file_path.replace(
@@ -119,14 +119,14 @@ class Tobacco3482(AtriaDocumentDataset):
             def __len__(self) -> int:
                 return len(self.split_file_paths)
 
-        return Tobacco3482Iterator(split=split, data_dir=Path(data_dir))
+        return SplitIterator(split=split, data_dir=Path(data_dir))
 
     def _input_transform(self, sample: tuple[Path, Path, int]) -> DocumentInstance:
         image_file_path, ocr_file_path, label_index = sample
         return DocumentInstance(
             sample_id=Path(image_file_path).name,
-            image=Image(file_path=image_file_path).load(),
-            ocr=OCR(file_path=ocr_file_path, type=OCRType.tesseract).load()
+            image=Image(file_path=image_file_path),
+            ocr=OCR(file_path=ocr_file_path, type=OCRType.tesseract)
             if self.load_ocr
             else None,
             gt=GroundTruth(
