@@ -1,11 +1,10 @@
 import json
 import os
+from collections.abc import Generator
 from pathlib import Path
 
 from atria_core.types import (
-    OCR,
     SERGT,
-    AtriaDatasetConfig,
     BoundingBoxList,
     DatasetLabels,
     DatasetMetadata,
@@ -15,7 +14,6 @@ from atria_core.types import (
     Image,
     Label,
     LabelList,
-    SplitConfig,
 )
 
 from atria_datasets import DATASET
@@ -53,16 +51,10 @@ _DATA_URLS = {
 }
 
 
-class SROIEConfig(AtriaDatasetConfig):
-    pass
-
-
 @DATASET.register("sroie")
 class SROIE(AtriaDocumentDataset):
-    _REGISTRY_CONFIGS = {"default": SROIEConfig(data_urls=_DATA_URLS)}
-
-    def _data_model(self) -> DocumentInstance:
-        return DocumentInstance
+    def _download_urls(self) -> dict[str, tuple[str, str]]:
+        return _DATA_URLS
 
     def _metadata(self) -> DatasetMetadata:
         return DatasetMetadata(
@@ -73,58 +65,71 @@ class SROIE(AtriaDocumentDataset):
             dataset_labels=DatasetLabels(ser=_CLASSES),
         )
 
-    def _split_configs(self, data_dir: str):
-        data_dir = Path(data_dir)
-        return [
-            SplitConfig(
-                split=DatasetSplitType.train,
-                gen_kwargs={"split_dir": data_dir / "sroie/sroie/train"},
-            ),
-            SplitConfig(
-                split=DatasetSplitType.test,
-                gen_kwargs={"split_dir": data_dir / "sroie/sroie/test"},
-            ),
-        ]
+    def _available_splits(self) -> list[DatasetSplitType]:
+        return [DatasetSplitType.train, DatasetSplitType.test]
 
-    def _load_ground_truth(
-        self, annotation_path: str, image_size: tuple[int, int]
-    ) -> OCR:
-        with open(annotation_path, encoding="utf8") as f:
-            sample = json.load(f)
-        words = []
-        word_bboxes = []
-        word_labels = []
-        for word, box, label in zip(
-            sample["words"], sample["bbox"], sample["labels"], strict=True
-        ):
-            word = word.strip()
-            if len(word) == 0:
-                continue
-            words.append(word)
-            word_bboxes.append(_normalize_bbox(box, image_size))
-            word_labels.append(label)
-        return GroundTruth(
-            ser=SERGT(
-                words=words,
-                word_bboxes=BoundingBoxList(value=word_bboxes),
-                word_labels=LabelList.from_list(
-                    [
-                        Label(value=_CLASSES.index(label), name=label)
-                        for label in word_labels
-                    ]
-                ),
-            )
-        )
+    def _split_iterator(
+        self, split: DatasetSplitType, data_dir: str
+    ) -> Generator[DocumentInstance, None, None]:
+        class SplitIterator:
+            def __init__(self, split: DatasetSplitType, data_dir: str):
+                self.split = split
+                self.data_dir = Path(data_dir)
 
-    def _split_iterator(self, split: DatasetSplitType, split_dir: Path):
-        ann_dir = split_dir / "tagged"
-        image_dir = split_dir / "images"
-        for _, filename in enumerate(sorted(os.listdir(image_dir))):
-            image = Image(file_path=image_dir / Path(filename).name)
-            ground_truth = self._load_ground_truth(
-                annotation_path=ann_dir / Path(filename).with_suffix(".json"),
-                image_size=image.size,
-            )
-            yield DocumentInstance(
-                sample_id=Path(filename).name, image=image, gt=ground_truth
-            )
+                if split == DatasetSplitType.train:
+                    self.split_dir = self.data_dir / "sroie/sroie/train"
+                elif split == DatasetSplitType.test:
+                    self.split_dir = self.data_dir / "sroie/sroie/test"
+
+                self.ann_dir = self.split_dir / "tagged"
+                self.image_dir = self.split_dir / "images"
+
+            def _load_ground_truth(
+                self, annotation_path: Path, image_size: tuple[int, int]
+            ) -> GroundTruth:
+                with open(annotation_path, encoding="utf8") as f:
+                    sample = json.load(f)
+
+                words = []
+                word_bboxes = []
+                word_labels = []
+
+                for word, box, label in zip(
+                    sample["words"], sample["bbox"], sample["labels"], strict=True
+                ):
+                    word = word.strip()
+                    if len(word) == 0:
+                        continue
+                    words.append(word)
+                    word_bboxes.append(_normalize_bbox(box, image_size))
+                    word_labels.append(label)
+
+                return GroundTruth(
+                    ser=SERGT(
+                        words=words,
+                        word_bboxes=BoundingBoxList(value=word_bboxes),
+                        word_labels=LabelList.from_list(
+                            [
+                                Label(value=_CLASSES.index(label), name=label)
+                                for label in word_labels
+                            ]
+                        ),
+                    )
+                )
+
+            def __iter__(self) -> Generator[DocumentInstance, None, None]:
+                for filename in sorted(os.listdir(self.image_dir)):
+                    image = Image(file_path=self.image_dir / Path(filename).name)
+                    ground_truth = self._load_ground_truth(
+                        annotation_path=self.ann_dir
+                        / Path(filename).with_suffix(".json"),
+                        image_size=image.size,
+                    )
+                    yield DocumentInstance(
+                        sample_id=Path(filename).name, image=image, gt=ground_truth
+                    )
+
+            def __len__(self) -> int:
+                return len(os.listdir(self.image_dir))
+
+        return SplitIterator(split=split, data_dir=data_dir)

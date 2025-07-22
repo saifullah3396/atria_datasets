@@ -1,6 +1,5 @@
-_target_: atria_datasets.ser.docbank.DocBankLER
+_target_: atria_datasets.table_extraction.fintabnet.FinTabNet
 _partial_: false
 max_train_samples: null
 max_validation_samples: null
 max_test_samples: null
-max_words_per_sample: 4000

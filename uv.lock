@@ -266,7 +266,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.39.4" },
     { name = "coverage", marker = "extra == 'test'" },
     { name = "datadings", git = "https://github.com/saifullah3396/datadings.git" },
-    { name = "datasets", specifier = ">=4.0.0" },
+    { name = "datasets", specifier = ">=3.5.0" },
     { name = "deltalake", specifier = ">=1.0.2" },
     { name = "docile-benchmark", specifier = ">=0.3.4" },
     { name = "editdistance", specifier = ">=0.8.1" },

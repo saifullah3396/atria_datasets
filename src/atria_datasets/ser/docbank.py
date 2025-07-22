@@ -15,13 +15,12 @@
 """DockBank dataset"""
 
 import json
-import os
+from collections.abc import Generator, Iterable
 from pathlib import Path
 
 from atria_core.logger.logger import get_logger
 from atria_core.types import (
     SERGT,
-    AtriaDatasetConfig,
     BoundingBoxList,
     DatasetLabels,
     DatasetMetadata,
@@ -31,7 +30,6 @@ from atria_core.types import (
     Image,
     Label,
     LabelList,
-    SplitConfig,
 )
 
 from atria_datasets import DATASET
@@ -93,16 +91,28 @@ _CLASSES = [
 ]
 
 
-class DocBankConfig(AtriaDatasetConfig):
-    max_words_per_sample: int = 4000
-
-
 @DATASET.register("docbank")
 class DocBankLER(AtriaDocumentDataset):
-    _REGISTRY_CONFIGS = {"default": DocBankConfig(data_urls=_DATA_URLS)}
+    _REGISTRY_CONFIGS = {
+        "1k": {
+            "max_train_samples": 1000,
+            "max_validation_samples": 1000,
+            "max_test_samples": 1000,
+        }
+    }
 
-    def _data_model(self) -> DocumentInstance:
-        return DocumentInstance
+    def __init__(
+        self,
+        max_train_samples: int | None = None,
+        max_validation_samples: int | None = None,
+        max_test_samples: int | None = None,
+        max_words_per_sample: int = 4000,
+    ):
+        self._max_words_per_sample = max_words_per_sample
+        super().__init__(max_train_samples, max_validation_samples, max_test_samples)
+
+    def _download_urls(self) -> list[str]:
+        return _DATA_URLS
 
     def _metadata(self) -> DatasetMetadata:
         return DatasetMetadata(
@@ -113,102 +123,113 @@ class DocBankLER(AtriaDocumentDataset):
             dataset_labels=DatasetLabels(layout=_CLASSES),
         )
 
-    def _split_configs(self, data_dir: str):
-        data_dir = Path(data_dir)
+    def _available_splits(self) -> list[DatasetSplitType]:
         return [
-            SplitConfig(
-                split=DatasetSplitType.train,
-                gen_kwargs={
-                    "image_base_dir": data_dir / "DocBank_500K_ori_img/",
-                    "annotation_base_dir": data_dir / "DocBank_500K_txt/",
-                    "split_filepath": data_dir / "500K_train.json",
-                },
-            ),
-            SplitConfig(
-                split=DatasetSplitType.test,
-                gen_kwargs={
-                    "image_base_dir": data_dir / "DocBank_500K_ori_img/",
-                    "annotation_base_dir": data_dir / "DocBank_500K_txt/",
-                    "split_filepath": data_dir / "500K_test.json",
-                },
-            ),
-            SplitConfig(
-                split=DatasetSplitType.validation,
-                gen_kwargs={
-                    "image_base_dir": data_dir / "DocBank_500K_ori_img/",
-                    "annotation_base_dir": data_dir / "DocBank_500K_txt/",
-                    "split_filepath": data_dir / "500K_valid.json",
-                },
-            ),
+            DatasetSplitType.train,
+            DatasetSplitType.validation,
+            DatasetSplitType.test,
         ]
 
-    def _load_ground_truth(self, text_file: Path, image_file_path: Path):
-        words = []
-        word_bboxes = []
-        word_labels = []
-
-        with open(text_file, encoding="utf8") as fp:
-            for line in fp.readlines():
-                tts = line.split("\t")
-                if not len(tts) == 10:
-                    logger.warning(f"Incomplete line in file {text_file}")
-                    continue
-
-                word = tts[0]
-                bbox = list(map(int, tts[1:5]))
-                structure = tts[9]
-
-                if len(word) == 0:
-                    continue
-                x1, y1, x2, y2 = bbox
-                area = (x2 - x1) * (y2 - y1)
-                if (
-                    word == "##LTLine##" or word == "##LTFigure##" and area < 10
-                ):  # remove ltline and ltfigures with very small noisy features
-                    continue
-
-                words.append(word)
-                word_bboxes.append(bbox)  # boxes are already normalized 0 to 1000
-                word_labels.append(structure.strip())
-        return GroundTruth(
-            ser=SERGT(
-                words=words,
-                word_bboxes=BoundingBoxList(value=word_bboxes),
-                word_labels=LabelList.from_list(
-                    [
-                        Label(value=_CLASSES.index(word_label), name=word_label)
-                        for word_label in word_labels
-                    ]
-                ),
-            )
-        )
-
     def _split_iterator(
-        self,
-        split: DatasetSplitType,
-        image_base_dir: str,
-        annotation_base_dir: str,
-        split_filepath: str,
-    ):
-        image_base_dir = Path(image_base_dir)
-        annotation_base_dir = Path(annotation_base_dir)
-        with open(split_filepath) as f:
-            split_data = json.load(f)
-            for idx in range(len(split_data["images"])):
-                image_file_path = split_data["images"][idx]["file_name"]
-                text_file = os.path.join(
-                    annotation_base_dir,
-                    image_file_path.replace("_ori.jpg", "") + ".txt",
-                )
-                ground_truth = self._load_ground_truth(
-                    text_file, image_base_dir / image_file_path
-                )
-                if (
-                    len(ground_truth.ser.words) > 0
-                    and len(ground_truth.ser.words) < self.max_words_per_sample
-                ):
-                    yield DocumentInstance(
-                        sample_id=Path(image_file_path).name,
-                        image=Image(file_path=image_file_path),
-                        gt=ground_truth,
+        self, split: DatasetSplitType, data_dir: str
+    ) -> Iterable[DocumentInstance]:
+        class SplitIterator:
+            def __init__(self, split: DatasetSplitType, data_dir: str):
+                self.split = split
+                self.data_dir = Path(data_dir)
+                self.max_words_per_sample = getattr(self, "max_words_per_sample", 4000)
+
+                # Set up paths based on split
+                if split == DatasetSplitType.train:
+                    self.split_filepath = (
+                        self.data_dir / "MSCOCO_Format_Annotation/500K_train.json"
                     )
+                elif split == DatasetSplitType.test:
+                    self.split_filepath = (
+                        self.data_dir / "MSCOCO_Format_Annotation/500K_test.json"
+                    )
+                elif split == DatasetSplitType.validation:
+                    self.split_filepath = (
+                        self.data_dir / "MSCOCO_Format_Annotation/500K_valid.json"
+                    )
+
+                self.image_base_dir = self.data_dir / "DocBank_500K_ori_img/"
+                self.annotation_base_dir = self.data_dir / "DocBank_500K_txt/"
+
+            def _load_ground_truth(
+                self, text_file: Path, image_file_path: Path
+            ) -> GroundTruth:
+                words = []
+                word_bboxes = []
+                word_labels = []
+
+                with open(text_file, encoding="utf8") as fp:
+                    for line in fp.readlines():
+                        tts = line.split("\t")
+                        if not len(tts) == 10:
+                            logger.warning(f"Incomplete line in file {text_file}")
+                            continue
+
+                        word = tts[0]
+                        bbox = list(map(int, tts[1:5]))
+                        structure = tts[9]
+
+                        if len(word) == 0:
+                            continue
+                        x1, y1, x2, y2 = bbox
+                        area = (x2 - x1) * (y2 - y1)
+                        if (
+                            word == "##LTLine##" or word == "##LTFigure##" and area < 10
+                        ):  # remove ltline and ltfigures with very small noisy features
+                            continue
+
+                        words.append(word)
+                        word_bboxes.append(
+                            bbox
+                        )  # boxes are already normalized 0 to 1000
+                        word_labels.append(structure.strip())
+
+                return GroundTruth(
+                    ser=SERGT(
+                        words=words,
+                        word_bboxes=BoundingBoxList(value=word_bboxes),
+                        word_labels=LabelList.from_list(
+                            [
+                                Label(value=_CLASSES.index(word_label), name=word_label)
+                                for word_label in word_labels
+                            ]
+                        ),
+                    )
+                )
+
+            def __iter__(self) -> Generator[DocumentInstance, None, None]:
+                with open(self.split_filepath) as f:
+                    split_data = json.load(f)
+                    for idx in range(len(split_data["images"])):
+                        image_file_path = split_data["images"][idx]["file_name"]
+                        text_file = self.annotation_base_dir / (
+                            image_file_path.replace("_ori.jpg", "") + ".txt"
+                        )
+
+                        ground_truth = self._load_ground_truth(
+                            text_file, self.image_base_dir / image_file_path
+                        )
+
+                        if (
+                            len(ground_truth.ser.words) > 0
+                            and len(ground_truth.ser.words) < self.max_words_per_sample
+                        ):
+                            yield DocumentInstance(
+                                sample_id=Path(image_file_path).name,
+                                image=Image(
+                                    file_path=self.image_base_dir / image_file_path
+                                ),
+                                gt=ground_truth,
+                            )
+
+            def __len__(self) -> int:
+                with open(self.split_filepath) as f:
+                    split_data = json.load(f)
+                    return len(split_data["images"])
+
+        return SplitIterator(split=split, data_dir=data_dir)

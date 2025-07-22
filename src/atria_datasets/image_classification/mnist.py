@@ -1,20 +1,15 @@
 from typing import Any
 
-from atria_core.types import (
-    AtriaHuggingfaceDatasetConfig,
-    ClassificationGT,
-    GroundTruth,
-    Image,
-    ImageInstance,
-    Label,
-)
+from atria_core.types import ClassificationGT, GroundTruth, Image, ImageInstance, Label
 
 from atria_datasets import DATASET, AtriaHuggingfaceImageDataset
 
 
 @DATASET.register("mnist")
 class MNIST(AtriaHuggingfaceImageDataset):
-    _REGISTRY_CONFIGS = {"mnist": AtriaHuggingfaceDatasetConfig(hf_repo="ylecun/mnist")}
+    _REGISTRY_CONFIGS = {
+        "mnist": {"hf_repo": "ylecun/mnist", "hf_config_name": "mnist"}
+    }
 
     def _input_transform(self, sample: dict[str, Any]) -> ImageInstance:
         return ImageInstance(

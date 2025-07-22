@@ -22,13 +22,8 @@ def main(
         overwrite_existing_shards=overwrite_existing_shards,
         access_token=access_token,
     )
-    logger.info(f"Loaded dataset: {dataset}")
     for sample in dataset.train:
-        logger.info(sample)
-        break
-
-    if "/" in name:
-        name = name.split("/")[0]
+        pass  # sanity check
     # dataset.upload_to_hub(name=name)
 
 

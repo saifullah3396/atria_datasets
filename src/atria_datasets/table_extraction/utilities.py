@@ -1,7 +1,10 @@
 import json
 import xml.etree.ElementTree as ET
 
-from atria_core.types.generic.annotated_object import AnnotatedObject
+from atria_core.types.generic.annotated_object import (
+    AnnotatedObject,
+    AnnotatedObjectList,
+)
 from atria_core.types.generic.bounding_box import BoundingBox
 from atria_core.types.generic.label import Label
 
@@ -30,7 +33,7 @@ def read_pascal_voc(
                 label=Label(value=label, name=labels[label]),
             )
         )
-    return annotated_object
+    return AnnotatedObjectList.from_list(annotated_object)
 
 
 def read_words_json(words_file: str):

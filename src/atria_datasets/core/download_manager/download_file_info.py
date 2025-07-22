@@ -29,7 +29,7 @@ from urllib.parse import ParseResult, urlparse
 from atria_core.utilities.repr import RepresentationMixin
 
 _SUPPORTED_URLS = ["http", "https", "ftp"]
-_COMPRESSED_FILES_REGEX = r"\.(zip|tar|tar\.gz|tgz)$"
+_COMPRESSED_FILES_REGEX = r"\.(zip|tar|tar\.gz|tgz)(\..+)?$"
 
 
 class DownloadFileInfo(RepresentationMixin):

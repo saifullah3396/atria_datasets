@@ -37,12 +37,9 @@ from atria_core.types import (
 from atria_core.types.datasets.metadata import DatasetMetadata
 from omegaconf import DictConfig, OmegaConf
 
-from atria_datasets.core.dataset.atria_dataset import AtriaDataset, DatasetLoadingMode
-from atria_datasets.core.storage.deltalake_reader import (
-    DeltalakeInMemoryReader,
-    DeltalakeLocalStreamReader,
-)
-from atria_datasets.core.storage.deltalake_streamer import DeltalakeOnlineStreamReader
+from atria_datasets.core.dataset.atria_dataset import AtriaDataset
+from atria_datasets.core.dataset.exceptions import SplitNotFoundError
+from atria_datasets.core.dataset.split_iterator import SplitIterator
 from atria_datasets.core.storage.utilities import FileStorageType
 from atria_datasets.core.typing.common import T_BaseDataInstance
 
@@ -55,46 +52,13 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
-    """
-    A dataset class for loading and managing datasets from the Atria Hub.
-
-    This class provides functionality to download, cache, and iterate through datasets
-    stored in the Atria Hub. It supports both streaming and local access modes,
-    and handles various data instance types through generic typing.
-
-    Attributes:
-        username (str): The username of the dataset owner
-        dataset_name (str): The name of the dataset
-        branch (str | None): The branch/version of the dataset
-        streaming (bool): Whether to stream data or download locally
-
-    Example:
-        ```python
-        # Load a dataset for local access
-        dataset = AtriaHubDataset.load_from_hub(
-            name="username/dataset_name", split=DatasetSplitType.TRAIN, streaming=False
-        )
-
-        # Load a dataset for streaming
-        streaming_dataset = AtriaHubDataset.load_from_hub(
-            name="username/dataset_name/branch", streaming=True
-        )
-        ```
-    """
-
-    __abstract__ = True
-
+class AtriaDeltalakeDataset(AtriaDataset[T_BaseDataInstance]):
     def __init__(
         self,
         username: str,
         dataset_name: str,
-        config_name: str | None = None,
         branch: str | None = None,
-        load_mode: DatasetLoadingMode = DatasetLoadingMode.in_memory,
-        max_train_samples: int | None = None,  # these get passed to the config
-        max_validation_samples: int | None = None,  # these get passed to the config
-        max_test_samples: int | None = None,  # these get passed to the config
+        streaming: bool = False,
     ) -> None:
         """
         Initialize the AtriaHubDataset.
@@ -112,124 +76,37 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         # Core dataset identifiers
         self._username = username
         self._dataset_name = dataset_name
-        self._config_name = config_name
         self._branch = branch
-        self._dataset_load_mode = load_mode
+        self._streaming = streaming
+
+        # Derived configuration
+        self._config_name = branch.split("-")[0] if branch else None
 
         # Initialize hub connection and dataset info
         self._hub = self._initialize_hub()
         self._dataset_info = self._initialize_dataset_info()
+        self._config = self._initialize_config()
 
-        super().__init__(
-            max_train_samples=max_train_samples,
-            max_validation_samples=max_validation_samples,
-            max_test_samples=max_test_samples,
-        )
+        # Setup storage paths
+        self._data_dir = self._setup_data_dir()
+        self._storage_dir = self._setup_storage_dir()
 
-    @classmethod
-    def load_from_hub(
-        cls,
-        name: str,
-        config_name: str | None = None,
-        data_dir: str | None = None,
-        preprocess_transform: Callable | None = None,
-        access_token: str | None = None,
-        dataset_load_mode: DatasetLoadingMode = DatasetLoadingMode.in_memory,
-        overwrite_existing_shards: bool = False,
-        allowed_keys: set[str] | None = None,
-        shard_storage_type: FileStorageType | None = None,
-        **sharded_storage_kwargs,
-    ) -> "AtriaHubDataset[T_BaseDataInstance]":
-        """
-        Load a dataset from the Atria Hub.
-
-        Args:
-            name: Dataset name in format 'username/dataset_name' or 'username/dataset_name/branch'
-            config_name: Configuration variant name (e.g., "main")
-            preprocess_transform: Optional preprocessing function to apply to data
-            access_token: Access token for private datasets
-            overwrite_existing_shards: Whether to overwrite existing local shards
-            allowed_keys: Set of keys to include in the data. If None, includes all keys
-            shard_storage_type: Type of storage for sharded data
-            sharded_storage_kwargs: Additional arguments for sharded storage
-            streaming: Whether to stream data from hub or download locally
-
-        Returns:
-            AtriaHubDataset: Configured dataset instance ready for use
-
-        Raises:
-            ValueError: If dataset name format is invalid
-            ImportError: If required packages are not available
-
-        Example:
-            ```python
-            # Load training split of a public dataset
-            dataset = AtriaHubDataset.load_from_hub(
-                name="username/my_dataset", split=DatasetSplitType.TRAIN
-            )
-
-            # Load with streaming enabled
-            streaming_dataset = AtriaHubDataset.load_from_hub(
-                name="username/my_dataset/v1.0", streaming=True
-            )
-            ```
-        """
-        username, dataset_name, branch = cls._validate_dataset_name(name)
-        config_name = config_name or cls.__default_config_name__
-        dataset = cls(
-            username=username,
-            dataset_name=dataset_name,
-            branch=branch,
-            config_name=config_name,
-        )
-        if data_dir is None:
-            data_dir = _DEFAULT_ATRIA_DATASETS_CACHE_DIR / dataset_name
-        dataset.build(
-            data_dir=data_dir,
-            config_name=config_name,
-            preprocess_transform=preprocess_transform,
-            access_token=access_token,
-            dataset_load_mode=dataset_load_mode,
-            overwrite_existing_shards=overwrite_existing_shards,
-            allowed_keys=allowed_keys,
-            shard_storage_type=shard_storage_type,
-            **sharded_storage_kwargs,
-        )
-
-        return cast(AtriaHubDataset[T_BaseDataInstance], dataset)
-
-    @classmethod
-    def _validate_dataset_name(cls, name: str) -> tuple[str, str, str | None]:
-        """
-        Validate and parse dataset name format.
-
-        Args:
-            name: Dataset name in format 'username/dataset_name' or 'username/dataset_name/branch'
-
-        Returns:
-            tuple: (username, dataset_name, branch) where branch can be None
-
-        Raises:
-            ValueError: If dataset name format is invalid
-        """
-        if "/" not in name:
-            raise ValueError(
-                f"Invalid dataset name format: {name}. "
-                "Expected format is 'username/dataset_name' or 'username/dataset_name/branch'."
-            )
-
-        parts = name.split("/")
-        if len(parts) == 2:
-            return parts[0], parts[1], None
-        elif len(parts) == 3:
-            return parts[0], parts[1], parts[2]
-        else:
-            raise ValueError(
-                f"Invalid dataset name format: {name}. "
-                "Expected format is 'username/dataset_name' or 'username/dataset_name/branch'."
-            )
+        # Internal state management
+        self._split_iterators: dict[DatasetSplitType, SplitIterator] = {}
+        self._downloads_prepared: bool = False
+        self._sharded_splits_prepared: bool = False
 
     # ==================== Properties ====================
+
+    @property
+    def config(self) -> DictConfig:
+        """
+        Get the dataset configuration.
+
+        Returns:
+            DictConfig: The dataset configuration loaded from the hub
+        """
+        return self._config
 
     @property
     def data_model(self) -> type[T_BaseDataInstance]:
@@ -253,6 +130,28 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
                 f"Unsupported data instance type: {self._dataset_info.data_instance_type}. "
                 "Supported types are 'document' and 'image'."
             )
+
+    @property
+    def username(self) -> str:
+        """Get the dataset owner's username."""
+        return self._username
+
+    @property
+    def dataset_name(self) -> str:
+        """Get the dataset name."""
+        return self._dataset_name
+
+    @property
+    def branch(self) -> str | None:
+        """Get the dataset branch."""
+        return self._branch
+
+    @property
+    def streaming(self) -> bool:
+        """Check if dataset is in streaming mode."""
+        return self._streaming
+
+    # ==================== Initialization Methods ====================
 
     def _initialize_hub(self) -> "AtriaHub":
         """
@@ -290,8 +189,6 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         self._dataset_info: DatasetInfo = self._hub.datasets.get_by_name(
             username=self._username, name=self._dataset_name
         )
-        self._branch = self._branch or self._dataset_info.default_branch
-        self._repo_path = f"lakefs://{self._dataset_info.repo_id}/{self._branch}"
         return self._dataset_info
 
     def _initialize_config(self) -> DictConfig:
@@ -301,14 +198,36 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         Returns:
             DictConfig: The dataset configuration from the hub
         """
+        if self._branch is None:
+            self._branch = self._dataset_info.default_branch
+            self._config_name = self._branch.split("-")[0]
+
         config = self._hub.datasets.get_config(
             self._dataset_info.repo_id, branch=self._branch
         )
         return OmegaConf.create(config)
 
+    def _setup_data_dir(self) -> Path:
+        """
+        Set up the local data directory path.
+
+        Returns:
+            Path: Path to the local data directory
+        """
+        return _DEFAULT_ATRIA_DATASETS_CACHE_DIR / self._username / self._dataset_name
+
+    def _setup_storage_dir(self) -> Path:
+        """
+        Set up the storage directory path.
+
+        Returns:
+            Path: Path to the storage directory
+        """
+        return self._data_dir
+
     # ==================== Path Management ====================
 
-    def split_dir(self, storage_dir: str, split: DatasetSplitType) -> Path:
+    def split_dir(self, split: DatasetSplitType) -> Path:
         """
         Get the directory path for a specific dataset split.
 
@@ -318,18 +237,20 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         Returns:
             Path: Path to the split directory
         """
-        return Path(storage_dir) / f"{self._config_name}/delta/{split.value}"
+        return Path(self._storage_dir) / f"delta/{split.value}"
 
-    def is_dataset_downloaded(self, storage_dir: str) -> bool:
+    # ==================== Dataset Existence Checks ====================
+
+    def dataset_exists(self) -> bool:
         """
         Check if the dataset exists locally.
 
         Returns:
             bool: True if dataset exists locally, False otherwise
         """
-        return (Path(storage_dir) / f"{self._config_name}/delta/").exists()
+        return (Path(self._storage_dir) / "delta/").exists()
 
-    def split_exists(self, storage_dir: str, split: DatasetSplitType) -> bool:
+    def split_exists(self, split: DatasetSplitType) -> bool:
         """
         Check if a specific split exists locally.
 
@@ -339,7 +260,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         Returns:
             bool: True if split exists locally, False otherwise
         """
-        return self.split_dir(storage_dir=storage_dir, split=split).exists()
+        return self.split_dir(split).exists()
 
     # ==================== Dataset Preparation ====================
 
@@ -355,11 +276,8 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             This method is only effective when streaming=False. For streaming datasets,
             no downloads are performed.
         """
-        if self._dataset_load_mode == DatasetLoadingMode.online_streaming:
-            return
-
-        if not self._downloads_prepared:
-            if self.is_dataset_downloaded(data_dir):
+        if not self._streaming and not self._downloads_prepared:
+            if self.dataset_exists():
                 logger.info(
                     f"Dataset {self._dataset_name} already exists in {self._storage_dir}. "
                     "Skipping download."
@@ -367,7 +285,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
                 return
 
             logger.info(
-                f"Downloading dataset {self._dataset_name} to {self._storage_dir} from repository {self._dataset_info.name}."
+                f"Downloading dataset {self._dataset_name} to {self._storage_dir}"
             )
             self._hub.datasets.download_files(
                 dataset_repo_id=self._dataset_info.repo_id,
@@ -376,31 +294,121 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             )
             self._downloads_prepared = True
 
-    def build(
-        self,
-        data_dir: str,
-        config_name: str | None = None,
-        runtime_transforms: Callable | None = None,
+    # ==================== Class Methods ====================
+
+    @classmethod
+    def _validate_dataset_name(cls, name: str) -> tuple[str, str, str | None]:
+        """
+        Validate and parse dataset name format.
+
+        Args:
+            name: Dataset name in format 'username/dataset_name' or 'username/dataset_name/branch'
+
+        Returns:
+            tuple: (username, dataset_name, branch) where branch can be None
+
+        Raises:
+            ValueError: If dataset name format is invalid
+        """
+        if "/" not in name:
+            raise ValueError(
+                f"Invalid dataset name format: {name}. "
+                "Expected format is 'username/dataset_name' or 'username/dataset_name/branch'."
+            )
+
+        parts = name.split("/")
+        if len(parts) == 2:
+            return parts[0], parts[1], None
+        elif len(parts) == 3:
+            return parts[0], parts[1], parts[2]
+        else:
+            raise ValueError(
+                f"Invalid dataset name format: {name}. "
+                "Expected format is 'username/dataset_name' or 'username/dataset_name/branch'."
+            )
+
+    @classmethod
+    def load_from_hub(
+        cls,
+        name: str,
+        split: DatasetSplitType | None = None,
         preprocess_transform: Callable | None = None,
         access_token: str | None = None,
-        dataset_load_mode: DatasetLoadingMode = DatasetLoadingMode.in_memory,
         overwrite_existing_shards: bool = False,
         allowed_keys: set[str] | None = None,
-        **sharded_storage_kwargs,
-    ) -> None:
-        return super().build(
-            data_dir=data_dir,
-            config_name=config_name,
-            runtime_transforms=runtime_transforms,
+        shard_storage_type: FileStorageType | None = None,
+        sharded_storage_kwargs: dict[str, Any] | None = None,
+        streaming: bool = False,
+    ) -> "AtriaHubDataset[T_BaseDataInstance]":
+        """
+        Load a dataset from the Atria Hub.
+
+        Args:
+            name: Dataset name in format 'username/dataset_name' or 'username/dataset_name/branch'
+            split: Specific split to load. If None, loads all available splits
+            preprocess_transform: Optional preprocessing function to apply to data
+            access_token: Access token for private datasets
+            overwrite_existing_shards: Whether to overwrite existing local shards
+            allowed_keys: Set of keys to include in the data. If None, includes all keys
+            shard_storage_type: Type of storage for sharded data
+            sharded_storage_kwargs: Additional arguments for sharded storage
+            streaming: Whether to stream data from hub or download locally
+
+        Returns:
+            AtriaHubDataset: Configured dataset instance ready for use
+
+        Raises:
+            ValueError: If dataset name format is invalid
+            ImportError: If required packages are not available
+
+        Example:
+            ```python
+            # Load training split of a public dataset
+            dataset = AtriaHubDataset.load_from_hub(
+                name="username/my_dataset", split=DatasetSplitType.TRAIN
+            )
+
+            # Load with streaming enabled
+            streaming_dataset = AtriaHubDataset.load_from_hub(
+                name="username/my_dataset/v1.0", streaming=True
+            )
+            ```
+        """
+        username, dataset_name, branch = cls._validate_dataset_name(name)
+        dataset = cls(
+            username=username,
+            dataset_name=dataset_name,
+            branch=branch,
+            streaming=streaming,
+        )
+
+        # Build the split for the dataset
+        dataset.build(
+            split=split,
             preprocess_transform=preprocess_transform,
             access_token=access_token,
-            dataset_load_mode=dataset_load_mode,
-            overwrite_existing_cached=False,
             overwrite_existing_shards=overwrite_existing_shards,
             allowed_keys=allowed_keys,
+            shard_storage_type=shard_storage_type,
             enable_cached_splits=False,
-            **sharded_storage_kwargs,
+            **(sharded_storage_kwargs if sharded_storage_kwargs else {}),
         )
+
+        return cast(AtriaHubDataset[T_BaseDataInstance], dataset)
+
+    # ==================== Abstract Method Implementations ====================
+
+    def get_max_split_samples(self, split: DatasetSplitType) -> int | None:
+        """
+        Get the maximum number of samples in a split.
+
+        Args:
+            split: The dataset split
+
+        Returns:
+            int | None: Maximum number of samples, or None if unlimited
+        """
+        return None
 
     def _metadata(self) -> "DatasetMetadata":
         """
@@ -418,7 +426,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         )
         return DatasetMetadata(**metadata)
 
-    def _available_splits(self) -> list[SplitConfig]:
+    def _split_configs(self, data_dir: str) -> list[SplitConfig]:
         """
         Get configuration for all available splits.
 
@@ -428,12 +436,15 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         Returns:
             list[SplitConfig]: List of split configurations
         """
-        return self._hub.datasets.get_splits(
-            self._dataset_info.repo_id, self._branch, self._config_name
-        )
+        return [
+            SplitConfig(split=DatasetSplitType(split))
+            for split in self._hub.datasets.get_splits(
+                self._dataset_info.repo_id, self._branch
+            )
+        ]
 
     def _split_iterator(
-        self, split: DatasetSplitType, data_dir: str
+        self, split: DatasetSplitType, allowed_keys: set[str] | None = None
     ) -> Sequence | Generator[Any, None, None]:
         """
         Create an iterator for a specific dataset split.
@@ -448,45 +459,42 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         Raises:
             SplitNotFoundError: If the split doesn't exist locally in non-streaming mode
         """
-        if self._dataset_load_mode != DatasetLoadingMode.online_streaming:
-            assert self.split_exists(storage_dir=self._storage_dir, split=split), (
-                f"Dataset split {split.value} not found in {self._storage_dir}. "
-                "Please ensure the dataset is downloaded or the split exists."
+        from atria_datasets.core.storage.deltalake_reader import DeltalakeReader
+        from atria_datasets.core.storage.deltalake_streamer import (
+            DeltalakeOnlineStreamReader,
+        )
+
+        if not self._streaming and not self.split_exists(split):
+            raise SplitNotFoundError(
+                f"Split {split.value} does not exist in the dataset {self._dataset_name}. "
+                "Please ensure the dataset is downloaded or use streaming=True."
             )
 
         # Always include essential keys
-        if self._allowed_keys is not None:
-            self._allowed_keys = self._allowed_keys.copy()
-            self._allowed_keys.update({"index", "sample_id"})
+        if allowed_keys is not None:
+            allowed_keys = allowed_keys.copy()
+            allowed_keys.update({"index", "sample_id"})
 
-        if self._dataset_load_mode == DatasetLoadingMode.online_streaming:
+        if self._streaming:
             storage_options = self._hub.get_storage_options()
             path = self._hub.datasets.dataset_table_path(
                 dataset_repo_id=self._dataset_info.repo_id,
                 branch=self._branch,
-                config_name=self._config_name,
                 split=split.value,
             )
             logger.info(f"Streaming dataset split {split.value} from {path}")
             return DeltalakeOnlineStreamReader(
                 path=path,
                 data_model=self.data_model,
-                allowed_keys=self._allowed_keys,
+                allowed_keys=allowed_keys,
                 storage_options=storage_options,
             )
-        elif self._dataset_load_mode == DatasetLoadingMode.local_streaming:
+        else:
             logger.debug(f"Reading dataset split {split.value} from local storage")
-            return DeltalakeLocalStreamReader(  # type: ignore
-                path=str(self.split_dir(storage_dir=self._storage_dir, split=split)),
+            return DeltalakeReader(  # type: ignore
+                path=str(self.split_dir(split=split)),
                 data_model=self.data_model,
-                allowed_keys=self._allowed_keys,
-            )
-        elif self._dataset_load_mode == DatasetLoadingMode.in_memory:
-            logger.debug(f"Reading dataset split {split.value} from local storage")
-            return DeltalakeInMemoryReader(
-                path=str(self.split_dir(storage_dir=self._storage_dir, split=split)),
-                data_model=self.data_model,
-                allowed_keys=self._allowed_keys,
+                allowed_keys=allowed_keys,
             )
 
 

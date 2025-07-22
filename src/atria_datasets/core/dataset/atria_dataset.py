@@ -24,6 +24,7 @@ Version: 1.0.0
 License: MIT
 """
 
+import enum
 import hashlib
 import json
 from abc import abstractmethod
@@ -50,9 +51,23 @@ from atria_datasets.core.storage.utilities import FileStorageType
 from atria_datasets.core.typing.common import T_BaseDataInstance
 
 if TYPE_CHECKING:
-    from atria_datasets.core.dataset.atria_hub_dataset import AtriaHubDataset
+    pass
 
 logger = get_logger(__name__)
+
+
+class DatasetLoadingMode(str, enum.Enum):
+    """
+    Enum to represent the streaming mode of the dataset.
+
+    Attributes:
+        LOCAL: Dataset is downloaded and stored locally.
+        STREAMING: Dataset is streamed directly from the Atria Hub.
+    """
+
+    in_memory = "in_memory"
+    local_streaming = "local_streaming"
+    online_streaming = "online_streaming"
 
 
 class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig):
@@ -98,6 +113,8 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
     """
 
     __abstract__ = True
+    __default_config_name__ = "default"
+    __requires_access_token__ = False
     __extract_downloads__ = True
     __data_model__: type[T_BaseDataInstance] = None
     __default_config_path__ = "conf/dataset/{config_name}.yaml"
@@ -152,6 +169,12 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
                 f"Class '{cls.__name__}.__data_model__' must be a type, "
                 f"got {type(data_model).__name__}: {data_model}"
             )
+        assert isinstance(cls.__requires_access_token__, bool), (
+            f"Class '{cls.__name__}' must define __requires_access_token__ as a boolean."
+        )
+        assert isinstance(cls.__extract_downloads__, bool), (
+            f"Class '{cls.__name__}' must define __extract_downloads__ as a boolean."
+        )
 
     # ==================== Public Properties ====================
 
@@ -216,12 +239,13 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
     def load_from_registry(
         cls,
         name: str,
-        config_name: str = "main",
+        config_name: str | None = None,
         data_dir: str | None = None,
         provider: str | None = None,
         preprocess_transform: Callable | None = None,
         shard_storage_type: FileStorageType | None = None,
         access_token: str | None = None,
+        dataset_load_mode: DatasetLoadingMode = DatasetLoadingMode.in_memory,
         overwrite_existing_cached: bool = False,
         overwrite_existing_shards: bool = False,
         allowed_keys: set[str] | None = None,
@@ -233,7 +257,6 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
 
         Args:
             name: Dataset name, optionally with config (e.g., "dataset/config")
-            config_name: Configuration variant name (e.g., "main")
             data_dir: Custom data directory path
             provider: Registry provider name
             preprocess_transform: Transform function applied during preprocessing
@@ -256,85 +279,38 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
 
         logger.info(f"Loading dataset {name} from registry.")
         build_kwargs = build_kwargs or {}
+        dataset_name = name.split("/")[-1] if "/" in name else name
+        config_name = config_name or cls.__default_config_name__
+
         dataset: AtriaDataset[T_BaseDataInstance] = DATASET.load_from_registry(
-            module_name=name, provider=provider, return_config=False, **build_kwargs
+            module_name=f"{name}/{config_name}",
+            provider=provider,
+            return_config=False,
+            **build_kwargs,
         )
-        if "/" in name:
-            name, config_name = name.split("/")
-        else:
-            name, config_name = name, "default"
-        if data_dir is None:
-            data_dir = _DEFAULT_ATRIA_DATASETS_CACHE_DIR / name
-        storage_dir = Path(data_dir) / "storage" / config_name
+
         dataset.build(
-            data_dir=data_dir,
-            storage_dir=storage_dir,
+            data_dir=data_dir or _DEFAULT_ATRIA_DATASETS_CACHE_DIR / dataset_name,
+            config_name=config_name,
             preprocess_transform=preprocess_transform,
             shard_storage_type=shard_storage_type,
             access_token=access_token,
             overwrite_existing_cached=overwrite_existing_cached,
             overwrite_existing_shards=overwrite_existing_shards,
+            dataset_load_mode=dataset_load_mode,
             allowed_keys=allowed_keys,
             **(sharded_storage_kwargs or {}),
         )
         return dataset
 
-    @classmethod
-    def load_from_hub(
-        cls,
-        name: str,
-        split: DatasetSplitType | None = None,
-        preprocess_transform: Callable | None = None,
-        access_token: str | None = None,
-        overwrite_existing_shards: bool = False,
-        allowed_keys: set[str] | None = None,
-        shard_storage_type: FileStorageType | None = None,
-        sharded_storage_kwargs: dict[str, Any] | None = None,
-        streaming: bool = False,
-    ) -> "AtriaHubDataset[T_BaseDataInstance]":
-        """
-        Load a dataset from the Atria Hub.
-
-        Args:
-            name: Dataset name on the hub (e.g., "username/dataset-name")
-            split: Specific split to load, or None for all splits
-            preprocess_transform: Transform function applied during preprocessing
-            access_token: Authentication token for private datasets
-            overwrite_existing_shards: Whether to overwrite existing shards
-            allowed_keys: Set of allowed keys to filter data
-            shard_storage_type: Type of sharded storage to use
-            sharded_storage_kwargs: Arguments for sharded storage configuration
-            streaming: Whether to enable streaming mode
-
-        Returns:
-            Loaded and configured AtriaHubDataset instance
-
-        Raises:
-            ImportError: If atria_hub package is not installed
-        """
-        from atria_datasets.core.dataset.atria_hub_dataset import AtriaHubDataset
-
-        return AtriaHubDataset.load_from_hub(
-            name=name,
-            split=split,
-            preprocess_transform=preprocess_transform,
-            access_token=access_token,
-            overwrite_existing_shards=overwrite_existing_shards,
-            allowed_keys=allowed_keys,
-            shard_storage_type=shard_storage_type,
-            sharded_storage_kwargs=sharded_storage_kwargs,
-            streaming=streaming,
-        )
-
-    # ==================== Public Methods ====================
-
     def build(
         self,
         data_dir: str,
-        storage_dir: str,
+        config_name: str | None = None,
         runtime_transforms: Callable | None = None,
         preprocess_transform: Callable | None = None,
         access_token: str | None = None,
+        dataset_load_mode: DatasetLoadingMode = DatasetLoadingMode.in_memory,
         overwrite_existing_cached: bool = False,
         overwrite_existing_shards: bool = False,
         allowed_keys: set[str] | None = None,
@@ -352,6 +328,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
 
         Args:
             data_dir: Custom data directory (overrides default)
+            config_name: Configuration name for the dataset
             runtime_transforms: Transform function applied at runtime
             preprocess_transform: Transform function applied during preprocessing
             access_token: Authentication token for private datasets
@@ -361,24 +338,27 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             enable_cached_splits: Whether to use cached storage (DeltaLake)
             **sharded_storage_kwargs: Additional arguments for sharded storage
         """
-        data_dir = self._validate_data_dir(data_dir)
-        self._data_dir = data_dir
-        self._storage_dir = Path(storage_dir)
+        self._data_dir = self._validate_data_dir(data_dir)
+        self._config_name = config_name or self.__default_config_name__
+        self._allowed_keys = allowed_keys
+        self._dataset_load_mode = dataset_load_mode
+        if config_name == self.__default_config_name__:
+            self._storage_dir = (
+                Path(data_dir)
+                / "storage"
+                / f"{self.__default_config_name__}-{self.config_hash}"
+            )
+        else:
+            self._storage_dir = Path(data_dir) / "storage" / config_name
 
         # Prepare splits based on caching preference
         if enable_cached_splits:
             self._prepare_cached_splits(
-                data_dir=data_dir,
-                storage_dir=storage_dir,
-                access_token=access_token,
-                overwrite_existing=overwrite_existing_cached,
-                allowed_keys=allowed_keys,
+                access_token=access_token, overwrite_existing=overwrite_existing_cached
             )
         else:
             # first prepare uncached splits
-            self._prepare_splits(
-                data_dir=data_dir, allowed_keys=allowed_keys, access_token=access_token
-            )
+            self._prepare_splits(access_token=access_token)
 
         # Setup sharded storage if requested
         shard_storage_type = sharded_storage_kwargs.get("shard_storage_type", None)
@@ -442,6 +422,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             hub.datasets.upload_files(
                 dataset=dataset,
                 branch=branch,
+                config_dir=self._storage_dir.name,
                 dataset_files=self.get_dataset_files_from_dir(),
             )
         except ImportError:
@@ -481,23 +462,32 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         Note:
             This method is idempotent - subsequent calls will not re-download files.
         """
+        if self.__requires_access_token__ and access_token is None:
+            logger.warning(
+                "access_token must be passed to download this dataset. "
+                f"See `{self.metadata.homepage}` for instructions to get the access token"
+            )
+            return
         if not self._downloads_prepared:
-            from atria_datasets.core.download_manager.download_manager import (
-                DownloadManager,
-            )
-
-            download_dir = Path(data_dir) / _DEFAULT_DOWNLOAD_PATH
-            download_dir.mkdir(parents=True, exist_ok=True)
-
-            download_manager = DownloadManager(
-                data_dir=Path(data_dir), download_dir=download_dir
-            )
-
-            download_urls = self._download_urls()
-            if len(download_urls) > 0:
-                self._downloaded_files = download_manager.download_and_extract(
-                    download_urls, extract=self.__extract_downloads__
+            if self._custom_download.__func__ is not AtriaDataset._custom_download:
+                self._downloaded_files = self._custom_download(data_dir, access_token)
+            else:
+                from atria_datasets.core.download_manager.download_manager import (
+                    DownloadManager,
                 )
+
+                download_dir = Path(data_dir) / _DEFAULT_DOWNLOAD_PATH
+                download_dir.mkdir(parents=True, exist_ok=True)
+
+                download_manager = DownloadManager(
+                    data_dir=Path(data_dir), download_dir=download_dir
+                )
+
+                download_urls = self._download_urls()
+                if len(download_urls) > 0:
+                    self._downloaded_files = download_manager.download_and_extract(
+                        download_urls, extract=self.__extract_downloads__
+                    )
 
             self._downloads_prepared = True
 
@@ -556,7 +546,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         )
 
         # Collect split files
-        config_name = Path(self._storage_dir).name
+        config_name = Path(self._storage_dir).name + f"-{self.config_hash}"
         dataset_files = [
             (
                 str(Path(self._storage_dir).parent / self.__default_metadata_path__),
@@ -591,19 +581,19 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         Raises:
             AssertionError: If path exists but is not a directory
         """
-        data_path = Path(data_dir)
+        data_dir = Path(data_dir)
 
-        if data_path.exists():
-            assert data_path.is_dir(), (
+        if data_dir.exists():
+            assert data_dir.is_dir(), (
                 f"Data directory {data_dir} exists but is not a directory."
             )
         else:
             logger.warning(
                 f"Data directory {data_dir} does not exist. Creating directory."
             )
-            data_path.mkdir(parents=True, exist_ok=True)
+            data_dir.mkdir(parents=True, exist_ok=True)
 
-        return data_path
+        return str(data_dir)
 
     def _prepare_sharded_splits(
         self,
@@ -648,24 +638,24 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         self._sharded_splits_prepared = True
 
     def _prepare_cached_splits(
-        self,
-        data_dir: str,
-        storage_dir: str,
-        split: DatasetSplitType | None = None,
-        access_token: str | None = None,
-        write_batch_size: int = 100000,
-        overwrite_existing: bool = False,
-        allowed_keys: set[str] | None = None,
+        self, access_token: str | None = None, overwrite_existing: bool = False
     ) -> None:
         """Prepare cached splits using DeltaLake storage."""
         from atria_datasets.core.storage.deltalake_storage_manager import (
             DeltalakeStorageManager,
         )
 
-        self.save_dataset_info(storage_dir)
-        storage_manager = DeltalakeStorageManager(
-            storage_dir=str(storage_dir), write_batch_size=write_batch_size
+        assert self._dataset_load_mode in [
+            DatasetLoadingMode.in_memory,
+            DatasetLoadingMode.local_streaming,
+        ], (
+            f"Dataset loading mode {self._dataset_load_mode} is not supported for cached splits. "
+            "Use 'in_memory' or 'local_streaming' modes."
+            f"For online streaming, use the 'online_streaming' mode with AtriaHubDataset."
         )
+
+        self.save_dataset_info(self._storage_dir)
+        storage_manager = DeltalakeStorageManager(storage_dir=self._storage_dir)
 
         for split in self._available_splits():
             split_exists = storage_manager.split_exists(split=split)
@@ -676,15 +666,15 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
 
             if not split_exists:
                 self.prepare_downloads(
-                    data_dir=str(data_dir), access_token=access_token
+                    data_dir=str(self._data_dir), access_token=access_token
                 )
-                logger.info(f"Caching split [{split.value}] to {storage_dir}")
+                logger.info(f"Caching split [{split.value}] to {self._storage_dir}")
                 storage_manager.write_split(
                     split_iterator=SplitIterator(
                         split=split,
                         data_model=self.data_model,
                         input_transform=self._input_transform,
-                        base_iterator=self._split_iterator(split, data_dir),
+                        base_iterator=self._split_iterator(split, self._data_dir),
                         max_len=self.get_max_split_samples(split),
                     )
                 )
@@ -695,23 +685,22 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
 
             # Load split from storage
             self._split_iterators[split] = storage_manager.read_split(
-                split=split, data_model=self.data_model, allowed_keys=allowed_keys
+                split=split,
+                data_model=self.data_model,
+                allowed_keys=self._allowed_keys,
+                streaming_mode=self._dataset_load_mode
+                == DatasetLoadingMode.local_streaming,
             )
 
-    def _prepare_splits(
-        self,
-        data_dir: str,
-        split: DatasetSplitType | None = None,
-        access_token: str | None = None,
-    ) -> None:
+    def _prepare_splits(self, access_token: str | None = None) -> None:
         """Prepare splits without caching (direct iteration)."""
         for split in self._available_splits():
-            self.prepare_downloads(data_dir=str(data_dir), access_token=access_token)
+            self.prepare_downloads(data_dir=self._data_dir, access_token=access_token)
             self._split_iterators[split] = SplitIterator(
                 split=split,
                 data_model=self.data_model,
                 input_transform=self._input_transform,
-                base_iterator=self._split_iterator(split, data_dir),
+                base_iterator=self._split_iterator(split, self._data_dir),
                 max_len=self.get_max_split_samples(split),
             )
 
@@ -748,6 +737,23 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             List of URLs as strings
         """
         return []
+
+    def _custom_download(
+        self, data_dir: str, access_token: str | None = None
+    ) -> dict[str, Path]:
+        """This method can be overridden by subclasses to implement custom download logic.
+
+        Args:
+            data_dir: Directory to save downloaded files
+            access_token: Authentication token for private resources
+
+        Returns:
+            Dictionary mapping download keys to downloaded file paths
+        """
+        raise NotImplementedError(
+            "Subclasses must implement the `_custom_download` method to handle "
+            "specific download logic."
+        )
 
     # ==================== Abstract Methods ====================
 

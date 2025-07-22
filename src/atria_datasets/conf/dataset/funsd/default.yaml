@@ -1,6 +1,5 @@
 _target_: atria_datasets.ser.funsd.FUNSD
 _partial_: false
-data_urls: https://guillaumejaume.github.io/FUNSD/dataset.zip
 max_train_samples: null
 max_validation_samples: null
 max_test_samples: null

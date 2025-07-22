@@ -1,8 +1,0 @@
-_target_: atria_datasets.table_extraction.icdar2013.ICDAR2013
-_partial_: false
-data_urls:
-- https://huggingface.co/datasets/bsmock/ICDAR-2013.c/resolve/main/ICDAR-2013.c-Structure.tar.gz
-- https://huggingface.co/datasets/bsmock/ICDAR-2013.c/resolve/main/ICDAR-2013.c-PDF_Annotations.tar.gz
-max_train_samples: null
-max_validation_samples: null
-max_test_samples: null

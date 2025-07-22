@@ -1,7 +1,7 @@
 _target_: atria_datasets.layout_analysis.publaynet.PubLayNet
 _partial_: false
-data_urls: null
+hf_repo: jordanparker6/publaynet
+hf_config_name: default
 max_train_samples: null
 max_validation_samples: null
 max_test_samples: null
-hf_repo: jordanparker6/publaynet

@@ -1,8 +1,5 @@
 _target_: atria_datasets.ser.docile.Docile
 _partial_: false
-data_urls:
-- https://docile-dataset-rossum.s3.eu-west-1.amazonaws.com/{access_token}/annotated-trainval.zip
-- https://docile-dataset-rossum.s3.eu-west-1.amazonaws.com/{access_token}/test.zip
 max_train_samples: null
 max_validation_samples: null
 max_test_samples: null
@@ -11,3 +8,4 @@ overlap_threshold: 0.5
 image_shape:
 - 1024
 - 1024
+type: lir

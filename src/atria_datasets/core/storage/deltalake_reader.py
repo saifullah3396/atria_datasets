@@ -7,7 +7,48 @@ from deltalake import DeltaTable
 from atria_datasets.core.typing.common import T_BaseDataInstance
 
 
-class DeltalakeReader(Sequence[T_BaseDataInstance]):
+class DeltalakeInMemoryReader(Sequence[T_BaseDataInstance]):
+    def __init__(
+        self,
+        path: str,
+        data_model: T_BaseDataInstance,
+        allowed_keys: set[str] | None = None,
+        storage_options: dict | None = None,
+    ):
+        import deltalake
+
+        self.delta_table_path = path
+        self.data_model = data_model
+        self.allowed_keys = allowed_keys
+        self.df = deltalake.DeltaTable(
+            self.delta_table_path, storage_options=storage_options
+        ).to_pandas()
+        if self.allowed_keys is not None:
+            self.allowed_keys = [
+                col
+                for col in self.df.columns
+                if col.startswith(tuple(self.allowed_keys))
+            ]
+
+    def dataframe(self) -> pd.DataFrame:
+        return self.df
+
+    def __len__(self) -> int:
+        return len(self.df)
+
+    def __getitem__(self, idx: int) -> T_BaseDataInstance:  # type: ignore[override]
+        if idx < 0 or idx >= len(self.df):
+            raise IndexError(
+                f"Index {idx} out of bounds for dataset with {len(self.df)} rows."
+            )
+        if self.allowed_keys is not None:
+            row = self.df.iloc[idx][self.allowed_keys].to_dict()
+        else:
+            row = self.df.iloc[idx].to_dict()
+        return self.data_model.from_row(row)
+
+
+class DeltalakeLocalStreamReader(Sequence[T_BaseDataInstance]):
     def __init__(
         self,
         path: str,
@@ -19,19 +60,13 @@ class DeltalakeReader(Sequence[T_BaseDataInstance]):
         self._storage_options = storage_options
         self._data_model = data_model
         self._allowed_keys = allowed_keys
-        if self._allowed_keys is not None:
-            self._allowed_keys = [
-                col
-                for col in self.df.columns
-                if col.startswith(tuple(self._allowed_keys))
-            ]
         self._pa_table = ds.dataset(  # we get the latest version of the Delta table and load it as a PyArrow dataset
             DeltaTable(self._path, storage_options=self._storage_options).file_uris()
         )
         self.length = self._pa_table.count_rows()
 
     def dataframe(self) -> pd.DataFrame:
-        return self._pa_table.to_pandas()
+        return self._pa_table.to_table().to_pandas()
 
     def __len__(self) -> int:
         return self.length

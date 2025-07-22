@@ -2,7 +2,6 @@ from typing import Any
 
 from atria_core.types import (
     AnnotatedObject,
-    AtriaHuggingfaceDatasetConfig,
     BoundingBox,
     BoundingBoxMode,
     ClassificationGT,
@@ -47,21 +46,17 @@ _LAYOUT_CLASSES = [
 @DATASET.register("doclaynet")
 class DocLayNet(AtriaHuggingfaceDocumentDataset):
     _REGISTRY_CONFIGS = {
-        "2022.08": AtriaHuggingfaceDatasetConfig(hf_repo="ds4sd/DocLayNet")
+        "2022.08": {"hf_repo": "ds4sd/DocLayNet", "hf_config_name": "2022.08"}
     }
 
     def _metadata(self) -> DatasetMetadata:
-        return DatasetMetadata(
-            dataset_labels=DatasetLabels(
-                classification=_DOC_CLASSES, layout=_LAYOUT_CLASSES
-            ),
-            description="DocLayNet is a large-scale dataset for document layout analysis.",
+        metadata = super()._metadata()
+        metadata.dataset_labels = DatasetLabels(
+            classification=_DOC_CLASSES, layout=_LAYOUT_CLASSES
         )
+        return metadata
 
-    def _data_model(self):
-        return DocumentInstance
-
-    def _data_model_transform(self, sample: dict[str, Any]) -> DocumentInstance:
+    def _input_transform(self, sample: dict[str, Any]) -> DocumentInstance:
         annotated_objects = []
         image = Image(content=sample["image"])
         for ann in sample["objects"]:

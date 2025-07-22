@@ -2,14 +2,16 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from atria_datasets.core.typing.common import T_BaseDataInstance
 from deltalake import DeltaTable
 from pyarrow.dataset import Dataset as ArrowDataset
+
+from atria_datasets.core.typing.common import T_BaseDataInstance
 
 logger = logging.getLogger(__name__)
 
 
-class DeltalakeStreamer(Sequence[T_BaseDataInstance]):
+# can only work with no worker for now
+class DeltalakeOnlineStreamReader(Sequence[T_BaseDataInstance]):
     def __init__(
         self,
         path: str,

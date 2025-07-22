@@ -9,7 +9,6 @@ from io import BytesIO
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 from atria_core.logger.logger import get_logger
 from docile.dataset import KILE_FIELDTYPES, LIR_FIELDTYPES, Field
 from PIL import Image
@@ -493,44 +492,31 @@ class DOCILEDataLoader:
     def label2id(self):
         return {v: k for k, v in self.id2label.items()}
 
-    def as_pandas_dataset(self):
-        ids, ner_tags, tokens, infos = [], [], [], []
-        bboxes = []
-        images = []
-
+    def __iter__(self):
         def make_labels(x, N):
             tmp = np.zeros(N, dtype=bool)
             tmp[x] = 1
             return tmp
 
         for i, (pt, meta) in enumerate(zip(self.processed_tables, self.metadata)):
-            ids.append(i)
             pt_tokens, pt_tags, pt_info = list(zip(*pt))
-            ner_tags.append(
-                tuple([make_labels(x, len(self.unique_entities)) for x in pt_tags])
-            )
-            tokens.append(pt_tokens)
-            infos.append(pt_info)
             img_str = meta["img_b64"]
             W, H = meta["img_w"], meta["img_h"]
-            images.append(img_str)
-            bboxes.append(
-                [
+            yield {
+                "id": i,
+                "ner_tags": tuple(
+                    [make_labels(x, len(self.unique_entities)) for x in pt_tags]
+                ),
+                "tokens": pt_tokens,
+                "bboxes": [
                     normalize_bbox(
                         np.array([d[0][0], d[0][1], d[0][2], d[0][3]], dtype=np.int32),
                         (W, H),
                     )
                     for d in pt_info
-                ]
-            )
-        data = {
-            "id": ids,
-            "ner_tags": ner_tags,
-            "tokens": tokens,
-            "bboxes": bboxes,
-            "img": images,
-        }
-        return pd.DataFrame.from_dict(data)
+                ],
+                "img": img_str,
+            }
 
 
 def prepare_docile_dataset(

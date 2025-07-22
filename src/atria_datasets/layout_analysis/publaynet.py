@@ -2,7 +2,6 @@ from typing import Any
 
 from atria_core.types import (
     AnnotatedObject,
-    AtriaHuggingfaceDatasetConfig,
     BoundingBox,
     BoundingBoxMode,
     DatasetLabels,
@@ -22,19 +21,15 @@ _CLASSES = ["text", "title", "list", "table", "figure"]
 @DATASET.register("publaynet")
 class PubLayNet(AtriaHuggingfaceDocumentDataset):
     _REGISTRY_CONFIGS = {
-        "default": AtriaHuggingfaceDatasetConfig(hf_repo="jordanparker6/publaynet")
+        "default": {"hf_repo": "jordanparker6/publaynet", "hf_config_name": "default"}
     }
 
     def _metadata(self) -> DatasetMetadata:
-        return DatasetMetadata(
-            dataset_labels=DatasetLabels(layout=_CLASSES),
-            description="PubLayNet is a large-scale dataset for document layout analysis.",
-        )
+        metadata = super()._metadata()
+        metadata.dataset_labels = DatasetLabels(layout=_CLASSES)
+        return metadata
 
-    def _data_model(self):
-        return DocumentInstance
-
-    def _data_model_transform(self, sample: dict[str, Any]) -> DocumentInstance:
+    def _input_transform(self, sample: dict[str, Any]) -> DocumentInstance:
         annotated_objects = []
         image = Image(content=sample["image"])
         for ann in sample["annotations"]:

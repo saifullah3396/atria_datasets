@@ -1,8 +1,0 @@
-_target_: atria_datasets.table_extraction.fintabnet.FinTabNet
-_partial_: false
-data_urls:
-- https://huggingface.co/datasets/bsmock/FinTabNet.c/resolve/main/FinTabNet.c-PDF_Annotations.tar.gz
-- https://huggingface.co/datasets/bsmock/FinTabNet.c/resolve/main/FinTabNet.c-Structure.tar.gz
-max_train_samples: null
-max_validation_samples: null
-max_test_samples: null

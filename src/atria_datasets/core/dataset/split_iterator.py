@@ -28,6 +28,8 @@ Version: 1.0.0
 License: MIT
 """
 
+import sys
+import traceback
 from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING
 
@@ -74,14 +76,14 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
         )
         self._tf_enabled = True
         self._is_iterable = isinstance(self._base_iterator, Iterable)
+        self._supports_indexing = hasattr(self._base_iterator, "__getitem__")
+        self._supports_multi_indexing = hasattr(self._base_iterator, "__getitems__")
         if not self._is_iterable:
             assert hasattr(self._base_iterator, "__len__"), (
                 f"T he base iterator {self._base_iterator} must implement __len__ to support indexing. "
             )
-            self._supports_indexing = hasattr(self._base_iterator, "__getitem__")
-            self._supports_multi_indexing = hasattr(self._base_iterator, "__getitems__")
             assert self._supports_indexing or self._supports_multi_indexing, (
-                f"The base iterator {self._base_iterator} must implement either __getitem__ or __getitems__ "
+                f"The base iterator {self._base_iterator} must implement either __iter__, __getitem__ or __getitems__ "
             )
 
     def enable_tf(self) -> None:
@@ -143,53 +145,66 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
             )
 
     def __iter__(self) -> Iterator[T_BaseDataInstance]:
-        if self._is_iterable:
-            if self._subset_indices is not None:
-                raise RuntimeError(
-                    "You are trying to iterate over a subset of the dataset, "
-                    "but the base iterator does not support indexing. "
-                )
+        try:
+            if self._is_iterable:
+                if self._subset_indices is not None:
+                    raise RuntimeError(
+                        "You are trying to iterate over a subset of the dataset, "
+                        "but the base iterator does not support indexing. "
+                    )
 
-            for index, sample in enumerate(self._base_iterator):
-                if self._tf_enabled:
-                    yield self._tf(index, sample)
-                else:
-                    yield index, sample
-        else:
-            for index in range(len(self)):
-                yield self[index]
+                for index, sample in enumerate(self._base_iterator):
+                    if self._tf_enabled:
+                        yield self._tf(index, sample)
+                    else:
+                        yield index, sample
+            else:
+                for index in range(len(self)):
+                    yield self[index]
+        except Exception:
+            raise RuntimeError("".join(traceback.format_exception(*sys.exc_info())))
 
     def __getitem__(self, index: int) -> T_BaseDataInstance:  # type: ignore[override]
-        assert self._supports_indexing, (
-            "The base iterator does not support multi-indexing. "
-            "Please use __getitem__ for single index access."
-        )
-        if self._subset_indices is not None:
-            index = self._subset_indices[index]
-        if self._tf_enabled:
-            return self._tf(index, self._base_iterator[index])  # type: ignore
-        return index, self._base_iterator[index]  # type: ignore
-
-    def __getitems__(self, indices: list[int]) -> list[T_BaseDataInstance]:  # type: ignore
-        if self._subset_indices is not None:
-            indices = [self._subset_indices[idx] for idx in indices]
-        if self._supports_multi_indexing:
-            data_instances = self._base_iterator[indices]  # type: ignore
-        else:
+        try:
+            if isinstance(index, list):
+                return self.__getitems__(index)
             assert self._supports_indexing, (
                 "The base iterator does not support multi-indexing. "
                 "Please use __getitem__ for single index access."
             )
-            data_instances = [self._base_iterator[index] for index in indices]  # type: ignore
-        if self._tf_enabled:
+            if self._subset_indices is not None:
+                index = self._subset_indices[index]
+            if self._tf_enabled:
+                return self._tf(index, self._base_iterator[index])  # type: ignore
+            return index, self._base_iterator[index]  # type: ignore
+        except Exception:
+            raise RuntimeError("".join(traceback.format_exception(*sys.exc_info())))
+
+    def __getitems__(self, indices: list[int]) -> list[T_BaseDataInstance]:  # type: ignore
+        try:
+            if self._subset_indices is not None:
+                indices = [self._subset_indices[idx] for idx in indices]
+            if self._supports_multi_indexing:
+                data_instances = self._base_iterator[indices]  # type: ignore
+            else:
+                assert self._supports_indexing, (
+                    "The base iterator does not support multi-indexing. "
+                    "Please use __getitem__ for single index access."
+                )
+                data_instances = [self._base_iterator[index] for index in indices]  # type: ignore
+            if self._tf_enabled:
+                return [
+                    self._tf(index, data_instance)
+                    for index, data_instance in zip(
+                        indices, data_instances, strict=True
+                    )
+                ]
             return [
-                self._tf(index, data_instance)
+                (index, data_instance)
                 for index, data_instance in zip(indices, data_instances, strict=True)
             ]
-        return [
-            (index, data_instance)
-            for index, data_instance in zip(indices, data_instances, strict=True)
-        ]
+        except Exception:
+            raise RuntimeError("".join(traceback.format_exception(*sys.exc_info())))
 
     def __len__(self) -> int:
         if hasattr(self._base_iterator, "__len__"):

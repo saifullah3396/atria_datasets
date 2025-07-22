@@ -7,23 +7,25 @@ PYTHONPATH=$DOCSETS_DIR/src:$ATRIA_DIR/src:$ATRIA_CORE_DIR/src:$PYTHONPATH
 DATASET_NAME=$1
 
 declare -a available_datasets=(
-    # "tobacco3482/image_with_ocr"
-    # "rvlcdip/image_with_ocr_1k"
+    "cifar10"
+    "huggingface_cifar10/plain_text"
+    "tobacco3482/image_with_ocr"
+    "rvlcdip/image_with_ocr_1k"
     "mnist/mnist"
     "cord"
     "funsd"
-    "sroie/default"
-    "wild_receipts/default"
-    # "docile/kile"
-    # "docbank/default"
-    # "docvqa/with_msr_ocr"
-    # "publaynet/main"
-    # "doclaynet/main"
-    # "icdar2019/trackA_modern" 
-    # "icdar2013/main"
-    # "fintabnet/main"
-    # "pubtables1m/detection"
-    # "pubtables1m/structure"
+    "sroie"
+    "wild_receipts"
+    "docile/kile"
+    "docbank/1k" 
+    "fintabnet/1k" 
+    "icdar2019/trackA_modern"
+    "icdar2013" 
+    # "doclaynet/2022.08" # too big failing downloads
+    "docvqa/with_msr_ocr" 
+    # "publaynet/default" # too big failing downloads
+    # "pubtables1m/detection_1k" # too big failing downloads
+    # "pubtables1m/structure_1k" # too big failing downloads
 )
 
 prepare_dataset() {
@@ -34,12 +36,9 @@ prepare_dataset() {
         IFS=' ' read -r dataset_name <<<"$dataset"
 
         if [[ "$dataset_name" == "$target_dataset_name" ]]; then
-            set -x
             PYTHONPATH=$PYTHONPATH python -m atria_datasets.prepare_dataset \
                 $dataset_name \
-                --overwrite-existing-cached \
                 $additional_args
-            set +x
             return 0
         fi
     done
@@ -49,7 +48,6 @@ prepare_dataset() {
 }
 
 if [[ -z "$DATASET_NAME" ]]; then
-    echo "Running prepare_dataset on all datasets..."
     for dataset in "${available_datasets[@]}"; do
         IFS=' ' read -r dataset_name <<<"$dataset"
         prepare_dataset "$dataset_name" "${@:2}"
