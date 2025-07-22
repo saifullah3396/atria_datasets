@@ -31,6 +31,8 @@ from atria_core.logger.logger import get_logger
 from atria_core.transforms.base import DataTransformsDict
 from atria_core.types import DatasetSplitType
 from atria_core.utilities.repr import RepresentationMixin
+from rich.pretty import pretty_repr
+
 from atria_datasets.core.batch_samplers.batch_samplers_dict import BatchSamplersDict
 from atria_datasets.core.dataset.atria_dataset import AtriaDataset
 from atria_datasets.core.dataset_splitters.standard_splitter import StandardSplitter
@@ -41,7 +43,6 @@ from atria_datasets.pipelines.utilities import (
     mmdet_pseudo_collate,
 )
 from atria_datasets.registry import DATA_PIPELINE
-from rich.pretty import pretty_repr
 
 if TYPE_CHECKING:
     from torch.utils.data import DataLoader, Dataset  # type: ignore
@@ -228,7 +229,7 @@ class AtriaDataPipeline(RepresentationMixin):
             or self._use_validation_set_for_test
             or self._use_train_set_for_test
         ):
-            self._dataset.build_split(
+            self._dataset.build(
                 split=DatasetSplitType.train,
                 data_dir=str(self._data_dir),
                 runtime_transforms=self._runtime_transforms.train,
@@ -242,7 +243,7 @@ class AtriaDataPipeline(RepresentationMixin):
                 **self._sharded_storage_kwargs,  # type: ignore
             )
             try:
-                self._dataset.build_split(
+                self._dataset.build(
                     split=DatasetSplitType.validation,
                     data_dir=str(self._data_dir),
                     runtime_transforms=self._runtime_transforms.evaluation,
@@ -273,7 +274,7 @@ class AtriaDataPipeline(RepresentationMixin):
                     )
 
         if split == DatasetSplitType.test or split is None:
-            self._dataset.build_split(
+            self._dataset.build(
                 split=DatasetSplitType.test,
                 data_dir=str(self._data_dir),
                 runtime_transforms=self._runtime_transforms.evaluation,
@@ -386,9 +387,10 @@ class AtriaDataPipeline(RepresentationMixin):
                 specified dataset, sampler, and other configurations.
         """
         import ignite.distributed as idist
-        from atria_datasets.core.storage.shard_list_datasets import TarShardListDataset
         from torch.utils.data import RandomSampler, SequentialSampler
         from wids import ChunkedSampler
+
+        from atria_datasets.core.storage.shard_list_datasets import TarShardListDataset
 
         if shuffle:
             if isinstance(self._dataset.train, TarShardListDataset):

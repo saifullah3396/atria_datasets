@@ -16,24 +16,6 @@ License: MIT
 """
 
 
-class SplitNotFoundError(ValueError):
-    """
-    Exception raised when a requested dataset split is not found.
-
-    Attributes:
-        split_value (str): The name of the missing dataset split.
-    """
-
-    def __init__(self, split_value: str):
-        """
-        Initializes the SplitNotFoundError.
-
-        Args:
-            split_value (str): The name of the missing dataset split.
-        """
-        super().__init__(f"Split '{split_value}' not found in the dataset.")
-
-
 class ConfigurationNotFoundError(ValueError):
     """
     Exception raised when a requested dataset configuration is not found.

@@ -7,8 +7,8 @@ PYTHONPATH=$DOCSETS_DIR/src:$ATRIA_DIR/src:$ATRIA_CORE_DIR/src:$PYTHONPATH
 DATASET_NAME=$1
 
 declare -a available_datasets=(
-    # "tobacco3482/main"
-    # "rvlcdip/main"
+    # "tobacco3482/image_with_ocr"
+    "rvlcdip/image_with_ocr"
     # "mnist/mnist"
     # "cord/cordv2"
     # "funsd/default"
@@ -19,7 +19,7 @@ declare -a available_datasets=(
     # "docvqa/with_msr_ocr"
     # "publaynet/main"
     # "doclaynet/main"
-    "icdar2019/trackA_modern" 
+    # "icdar2019/trackA_modern" 
     # "icdar2013/main"
     # "fintabnet/main"
     # "pubtables1m/detection"
@@ -48,10 +48,7 @@ prepare_dataset() {
     return 1
 }
 
-if [ -z "$DATASET_NAME" ]; then
-    echo "No dataset name provided. Please provide a dataset name or use 'all'."
-    exit 1
-elif [[ "$DATASET_NAME" == "all" ]]; then
+if [[ -z "$DATASET_NAME" ]]; then
     echo "Running prepare_dataset on all datasets..."
     for dataset in "${available_datasets[@]}"; do
         IFS=' ' read -r dataset_name <<<"$dataset"

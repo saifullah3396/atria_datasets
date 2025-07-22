@@ -84,6 +84,8 @@ class DownloadFileInfo(RepresentationMixin):
                 f"URL {url} is not supported. Supported URL schemes are: {', '.join(_SUPPORTED_URLS)}"
             )
         download_dir.mkdir(parents=True, exist_ok=True)
+
+    def update_extract_path(self):
         if self.is_compressed:
             match = re.search(_COMPRESSED_FILES_REGEX, self.rel_output_file_path)
             if match:

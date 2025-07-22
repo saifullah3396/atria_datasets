@@ -206,44 +206,20 @@ class HTTPDownloader(FileDownloader):
         Raises:
             Exception: If the HTTP request fails.
         """
-        import os
 
         import requests
-        import tqdm
 
         try:
-            headers = {"User-Agent": self.user_agent} if self.user_agent else {}
-            response = requests.get(
-                parsed_url.geturl(),
-                headers=headers,
-                proxies=self.proxies,
-                stream=True,
-                timeout=self.timeout,
-            )
-            if response.status_code == 200:
-                total_size = int(response.headers.get("Content-Length", 0))
-                block_size = 8192  # 8 KB
+            from fsspec import url_to_fs
+            from fsspec.callbacks import TqdmCallback
 
-                with (
-                    open(destination_path, "wb") as f,
-                    tqdm.tqdm(
-                        total=total_size,
-                        unit="B",
-                        unit_scale=True,
-                        unit_divisor=1024,
-                        desc=os.path.basename(destination_path),
-                    ) as progress_bar,
-                ):
-                    for chunk in response.iter_content(chunk_size=block_size):
-                        if chunk:
-                            f.write(chunk)
-                            progress_bar.update(len(chunk))
-
-                logger.debug(f"Downloaded {parsed_url.geturl()} to {destination_path}")
-            else:
-                raise Exception(
-                    f"Failed to download file: {parsed_url.geturl()} with status code {response.status_code}"
-                )
+            try:
+                logger.info(f"Downloading {parsed_url.geturl()} to {destination_path}")
+                fs, path = url_to_fs(parsed_url.geturl())
+                fs.get_file(path, destination_path, callback=TqdmCallback())
+            except Exception as e:
+                logger.error(f"Error downloading {parsed_url.geturl()}: {e}")
+                raise
         except requests.RequestException as e:
             logger.error(f"Error downloading {parsed_url.geturl()}: {e}")
             raise

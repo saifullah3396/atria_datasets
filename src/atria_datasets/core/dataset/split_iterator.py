@@ -28,7 +28,6 @@ Version: 1.0.0
 License: MIT
 """
 
-import inspect
 from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING
 
@@ -67,24 +66,29 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
         self._split = split
         self._base_iterator = base_iterator
         self._max_len = max_len
-        self._apply_output_transform: bool = True
         self._subset_indices: list[int] | None = None
         self._tf = InstanceTransform(
             input_transform=input_transform,
             data_model=data_model,
             output_transform=output_transform,
-            apply_output_transform=self._apply_output_transform,
         )
-        self._is_generator = inspect.isgenerator(base_iterator)
-        if not self._is_generator:
+        self._tf_enabled = True
+        self._is_iterable = isinstance(self._base_iterator, Iterable)
+        if not self._is_iterable:
             assert hasattr(self._base_iterator, "__len__"), (
                 f"T he base iterator {self._base_iterator} must implement __len__ to support indexing. "
             )
-            self._suports_indexing = hasattr(self._base_iterator, "__getitem__")
+            self._supports_indexing = hasattr(self._base_iterator, "__getitem__")
             self._supports_multi_indexing = hasattr(self._base_iterator, "__getitems__")
-            assert self._suports_indexing or self._supports_multi_indexing, (
+            assert self._supports_indexing or self._supports_multi_indexing, (
                 f"The base iterator {self._base_iterator} must implement either __getitem__ or __getitems__ "
             )
+
+    def enable_tf(self) -> None:
+        self._tf_enabled = True
+
+    def disable_tf(self) -> None:
+        self._tf_enabled = False
 
     @property
     def split(self) -> DatasetSplitType:
@@ -127,12 +131,6 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
     def data_model(self) -> T_BaseDataInstance:
         return self._tf._data_model
 
-    def disable_output_transform(self) -> None:
-        self._apply_output_transform = False
-
-    def enable_output_transform(self) -> None:
-        self._apply_output_transform = True
-
     def dataframe(self) -> "pd.DataFrame":
         """
         Displays the dataset split information in a rich format.
@@ -145,29 +143,32 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
             )
 
     def __iter__(self) -> Iterator[T_BaseDataInstance]:
-        if self._is_generator:
+        if self._is_iterable:
             if self._subset_indices is not None:
                 raise RuntimeError(
                     "You are trying to iterate over a subset of the dataset, "
                     "but the base iterator does not support indexing. "
                 )
 
-            #
             for index, sample in enumerate(self._base_iterator):
-                yield self._tf(index, sample)
-
-        # fall back to sequence iteration of self
-        for index in range(len(self)):
-            yield self[index]
+                if self._tf_enabled:
+                    yield self._tf(index, sample)
+                else:
+                    yield index, sample
+        else:
+            for index in range(len(self)):
+                yield self[index]
 
     def __getitem__(self, index: int) -> T_BaseDataInstance:  # type: ignore[override]
-        assert self._suports_indexing, (
+        assert self._supports_indexing, (
             "The base iterator does not support multi-indexing. "
             "Please use __getitem__ for single index access."
         )
         if self._subset_indices is not None:
             index = self._subset_indices[index]
-        return self._tf(index, self._base_iterator[index])  # type: ignore
+        if self._tf_enabled:
+            return self._tf(index, self._base_iterator[index])  # type: ignore
+        return index, self._base_iterator[index]  # type: ignore
 
     def __getitems__(self, indices: list[int]) -> list[T_BaseDataInstance]:  # type: ignore
         if self._subset_indices is not None:
@@ -175,13 +176,18 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
         if self._supports_multi_indexing:
             data_instances = self._base_iterator[indices]  # type: ignore
         else:
-            assert self._suports_indexing, (
+            assert self._supports_indexing, (
                 "The base iterator does not support multi-indexing. "
                 "Please use __getitem__ for single index access."
             )
             data_instances = [self._base_iterator[index] for index in indices]  # type: ignore
+        if self._tf_enabled:
+            return [
+                self._tf(index, data_instance)
+                for index, data_instance in zip(indices, data_instances, strict=True)
+            ]
         return [
-            self._tf(index, data_instance)
+            (index, data_instance)
             for index, data_instance in zip(indices, data_instances, strict=True)
         ]
 

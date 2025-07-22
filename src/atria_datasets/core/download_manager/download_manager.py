@@ -195,7 +195,9 @@ class DownloadManager(RepresentationMixin):
                     f"Failed to extract {download_file_info.extractable_path}"
                 ) from e
 
-    def _finalize_files(self, download_file_infos: list[DownloadFileInfo]):
+    def _finalize_files(
+        self, download_file_infos: list[DownloadFileInfo], extract: bool = True
+    ):
         """
         Finalizes the downloaded files by moving them to the output directory.
 
@@ -207,7 +209,7 @@ class DownloadManager(RepresentationMixin):
                 continue
             if download_file_info.is_part_file:
                 continue
-            if download_file_info.is_compressed:
+            if download_file_info.is_compressed and extract:
                 if download_file_info.extracted_path.exists():
                     logger.debug(
                         f"Removing compressed file {download_file_info.download_path}"
@@ -224,7 +226,9 @@ class DownloadManager(RepresentationMixin):
                     download_file_info.download_path, download_file_info.output_path
                 )
 
-    def download_and_extract(self, data_urls: str | list[str] | dict[str, str]):
+    def download_and_extract(
+        self, data_urls: str | list[str] | dict[str, str], extract: bool = True
+    ) -> dict[str, Path]:
         """
         Downloads and extracts files from the provided URLs.
 
@@ -234,6 +238,9 @@ class DownloadManager(RepresentationMixin):
         Returns:
             Dict[str, Path]: A dictionary mapping file names to their final output paths.
         """
+        if extract:
+            for download_file_info in self._prepare_urls_and_dirs(data_urls):
+                download_file_info.update_extract_path()
         download_file_infos = self._prepare_urls_and_dirs(data_urls)
         if any(
             not download_file_info.is_download_completed
@@ -244,8 +251,9 @@ class DownloadManager(RepresentationMixin):
             )
             self._download_files(download_file_infos)
             self._merge_part_files(download_file_infos)
-            self._extract_archives(download_file_infos)
-            self._finalize_files(download_file_infos)
+            if extract:
+                self._extract_archives(download_file_infos)
+            self._finalize_files(download_file_infos, extract=extract)
         return {
             download_file_info.output_path.name: download_file_info.output_path
             for download_file_info in download_file_infos

@@ -1,9 +1,9 @@
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from random import shuffle
 
 from atria_core.types import (
     OCR,
-    AtriaDatasetConfig,
     ClassificationGT,
     DatasetLabels,
     DatasetMetadata,
@@ -13,7 +13,6 @@ from atria_core.types import (
     Image,
     Label,
     OCRType,
-    SplitConfig,
 )
 
 from atria_datasets import DATASET, AtriaDocumentDataset
@@ -59,10 +58,27 @@ _CLASSES = [
 
 @DATASET.register("tobacco3482")
 class Tobacco3482(AtriaDocumentDataset):
-    _REGISTRY_CONFIGS = {"main": AtriaDatasetConfig(data_urls=_DATA_URLS)}
+    _REGISTRY_CONFIGS = {
+        "image_only": {"load_ocr": False},
+        "image_with_ocr": {"load_ocr": True},
+    }
 
-    def _data_model(self) -> DocumentInstance:
-        return DocumentInstance
+    def __init__(
+        self,
+        max_train_samples: int | None = None,  # these get passed to the config
+        max_validation_samples: int | None = None,  # these get passed to the config
+        max_test_samples: int | None = None,  # these get passed to the config
+        load_ocr: bool = False,
+    ):
+        super().__init__(
+            max_train_samples=max_train_samples,
+            max_validation_samples=max_validation_samples,
+            max_test_samples=max_test_samples,
+        )
+        self.load_ocr = load_ocr
+
+    def _download_urls(self) -> list[str]:
+        return _DATA_URLS
 
     def _metadata(self) -> DatasetMetadata:
         return DatasetMetadata(
@@ -73,52 +89,46 @@ class Tobacco3482(AtriaDocumentDataset):
             dataset_labels=DatasetLabels(classification=_CLASSES),
         )
 
-    def _split_configs(self, data_dir: str):
-        data_dir = Path(data_dir)
-        return [
-            SplitConfig(
-                split=DatasetSplitType.train,
-                gen_kwargs={
-                    "image_data_dir": data_dir / _IMAGE_DATA_NAME,
-                    "ocr_data_dir": data_dir / _OCR_DATA_NAME,
-                    "split_file_paths": data_dir / "train.txt",
-                },
-            ),
-            SplitConfig(
-                split=DatasetSplitType.test,
-                gen_kwargs={
-                    "image_data_dir": data_dir / _IMAGE_DATA_NAME,
-                    "ocr_data_dir": data_dir / _OCR_DATA_NAME,
-                    "split_file_paths": data_dir / "test.txt",
-                },
-            ),
-        ]
+    def _available_splits(self):
+        return [DatasetSplitType.train, DatasetSplitType.test]
 
     def _split_iterator(
-        self,
-        split: DatasetSplitType,
-        image_data_dir: str,
-        ocr_data_dir: str,
-        split_file_paths: str,
-    ):
-        with open(split_file_paths) as f:
-            split_file_paths = f.read().splitlines()
-            shuffle(split_file_paths)
+        self, split: DatasetSplitType, data_dir: str
+    ) -> Iterable[tuple[Path, Path, int]]:
+        class Iterator(Iterable[tuple[Path, Path, int]]):
+            def __init__(self, split: DatasetSplitType, data_dir: str):
+                if split == DatasetSplitType.train:
+                    split_file_paths = Path(data_dir) / "train.txt"
+                elif split == DatasetSplitType.test:
+                    split_file_paths = Path(data_dir) / "test.txt"
+                with open(split_file_paths) as f:
+                    self.split_file_paths = f.read().splitlines()
+                    shuffle(self.split_file_paths)
+                self.image_data_dir = data_dir / _IMAGE_DATA_NAME
+                self.ocr_data_dir = data_dir / _OCR_DATA_NAME
 
-        for _, image_file_path in enumerate(split_file_paths):
-            label_index = _CLASSES.index(Path(image_file_path).parent.name)
-            ocr_file_path = Path(ocr_data_dir) / image_file_path.replace(
-                ".jpg", ".hocr"
-            )
-            image_file_path = Path(image_data_dir) / image_file_path
-            yield label_index, image_file_path, ocr_file_path
+            def __iter__(self) -> Iterator[DocumentInstance]:
+                for image_file_path in self.split_file_paths:
+                    label_index = _CLASSES.index(Path(image_file_path).parent.name)
+                    ocr_file_path = Path(self.ocr_data_dir) / image_file_path.replace(
+                        ".jpg", ".hocr"
+                    )
+                    image_file_path = Path(self.image_data_dir) / image_file_path
+                    yield image_file_path, ocr_file_path, label_index
 
-    def _input_transform(self, sample: tuple[int, str, str]) -> DocumentInstance:
-        label_index, image_file_path, ocr_file_path = sample
+            def __len__(self) -> int:
+                return len(self.split_file_paths)
+
+        return Tobacco3482Iterator(split=split, data_dir=Path(data_dir))
+
+    def _input_transform(self, sample: tuple[Path, Path, int]) -> DocumentInstance:
+        image_file_path, ocr_file_path, label_index = sample
         return DocumentInstance(
             sample_id=Path(image_file_path).name,
-            image=Image(file_path=image_file_path),
-            ocr=OCR(file_path=ocr_file_path, type=OCRType.tesseract),
+            image=Image(file_path=image_file_path).load(),
+            ocr=OCR(file_path=ocr_file_path, type=OCRType.tesseract).load()
+            if self.load_ocr
+            else None,
             gt=GroundTruth(
                 classification=ClassificationGT(
                     label=Label(name=_CLASSES[label_index], value=label_index)

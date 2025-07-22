@@ -22,7 +22,6 @@ def main(
         logger.info(f"Loading dataset: {name}")
     dataset = AtriaDataset.load_from_registry(
         name=name,
-        split=None,
         overwrite_existing_cached=overwrite_existing_cached,
         overwrite_existing_shards=overwrite_existing_shards,
         access_token=access_token,
@@ -36,7 +35,10 @@ def main(
     for sample in dataset.train:
         logger.info(sample)
         break
-    # dataset.upload_to_hub()
+
+    if "/" in name:
+        name = name.split("/")[0]
+    dataset.upload_to_hub(name=name)
 
 
 if __name__ == "__main__":

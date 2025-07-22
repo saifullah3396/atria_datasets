@@ -1,10 +1,10 @@
 """RVL-CDIP (Ryerson Vision Lab Complex Document Information Processing) dataset"""
 
+from collections.abc import Generator, Iterable
 from pathlib import Path
 
 from atria_core.types import (
     OCR,
-    AtriaDatasetConfig,
     ClassificationGT,
     DatasetLabels,
     DatasetMetadata,
@@ -14,7 +14,6 @@ from atria_core.types import (
     Image,
     Label,
     OCRType,
-    SplitConfig,
 )
 
 from atria_datasets import DATASET, AtriaDocumentDataset
@@ -48,10 +47,10 @@ _URLS = {
 }
 
 _METADATA_URLS = {  # for main let us always have tobacco3482 overlap removed from the dataset
-    "main": {
-        "labels/main/train.txt": "https://huggingface.co/datasets/sasa3396/rvlcdip/resolve/main/data/tobacco3482_excluded/train.txt",
-        "labels/main/test.txt": "https://huggingface.co/datasets/sasa3396/rvlcdip/resolve/main/data/tobacco3482_excluded/test.txt",
-        "labels/main/val.txt": "https://huggingface.co/datasets/sasa3396/rvlcdip/resolve/main/data/tobacco3482_excluded/val.txt",
+    "default": {
+        "labels/default/train.txt": "https://huggingface.co/datasets/sasa3396/rvlcdip/resolve/main/data/tobacco3482_excluded/train.txt",
+        "labels/default/test.txt": "https://huggingface.co/datasets/sasa3396/rvlcdip/resolve/main/data/tobacco3482_excluded/test.txt",
+        "labels/default/val.txt": "https://huggingface.co/datasets/sasa3396/rvlcdip/resolve/main/data/tobacco3482_excluded/val.txt",
     },
     "tobacco3482_included": {
         "labels/tobacco3482_included/train.txt": "https://huggingface.co/datasets/sasa3396/rvlcdip/resolve/main/data/default/train.txt",
@@ -84,12 +83,33 @@ _CLASSES = [
 class RvlCdip(AtriaDocumentDataset):
     """Ryerson Vision Lab Complex Document Information Processing dataset."""
 
+    __extract_downloads__ = False
     _REGISTRY_CONFIGS = {
-        "main": AtriaDatasetConfig(data_urls={**_METADATA_URLS["main"], **_URLS})
+        "image": {"load_ocr": False},
+        "image_with_ocr": {"load_ocr": True},
     }
 
-    def _data_model(self) -> DocumentInstance:
-        return DocumentInstance
+    def __init__(
+        self,
+        max_train_samples: int | None = None,  # these get passed to the config
+        max_validation_samples: int | None = None,  # these get passed to the config
+        max_test_samples: int | None = None,  # these get passed to the config
+        type: str = "default",  # type of dataset to load, e.g., "default" or "tobacco3482_included"
+        load_ocr: bool = False,
+    ):
+        super().__init__(
+            max_train_samples=max_train_samples,
+            max_validation_samples=max_validation_samples,
+            max_test_samples=max_test_samples,
+        )
+        self.type = type
+        self.load_ocr = load_ocr
+
+    def _download_urls(self) -> list[str]:
+        if self.type in _METADATA_URLS:
+            return list(_METADATA_URLS[self.type].values()) + list(_URLS.values())
+        else:
+            raise ValueError(f"Unknown dataset type: {self.type}")
 
     def _metadata(self) -> DatasetMetadata:
         return DatasetMetadata(
@@ -100,60 +120,53 @@ class RvlCdip(AtriaDocumentDataset):
             dataset_labels=DatasetLabels(classification=_CLASSES),
         )
 
-    def _split_configs(self, data_dir: str):
-        data_dir = Path(data_dir)
-        image_data_dir = data_dir / _IMAGE_DATA_NAME / "images"
-        ocr_data_dir = data_dir / _OCR_DATA_NAME / "images"
+    def _available_splits(self):
         return [
-            SplitConfig(
-                split=DatasetSplitType.train,
-                gen_kwargs={
-                    "image_data_dir": image_data_dir,
-                    "ocr_data_dir": ocr_data_dir,
-                    "split_file_paths": data_dir / "labels/main/train.txt",
-                },
-            ),
-            SplitConfig(
-                split=DatasetSplitType.test,
-                gen_kwargs={
-                    "image_data_dir": image_data_dir,
-                    "ocr_data_dir": ocr_data_dir,
-                    "split_file_paths": data_dir / "labels/main/test.txt",
-                },
-            ),
-            SplitConfig(
-                split=DatasetSplitType.validation,
-                gen_kwargs={
-                    "image_data_dir": image_data_dir,
-                    "ocr_data_dir": ocr_data_dir,
-                    "split_file_paths": data_dir / "labels/main/val.txt",
-                },
-            ),
+            DatasetSplitType.train,
+            DatasetSplitType.test,
+            DatasetSplitType.validation,
         ]
 
     def _split_iterator(
-        self,
-        split: DatasetSplitType,
-        image_data_dir: str,
-        ocr_data_dir: str,
-        split_file_paths: str,
-    ):
-        with open(split_file_paths) as f:
-            split_file_paths = f.read().splitlines()
+        self, split: DatasetSplitType, data_dir: str
+    ) -> Iterable[tuple[Path, Path, int]]:
+        class SplitIterator(Iterable[tuple[Path, Path, int]]):
+            def __init__(self, split: DatasetSplitType, data_dir: str):
+                if split == DatasetSplitType.train:
+                    split_file_paths = Path(data_dir) / "labels/main/train.txt"
+                elif split == DatasetSplitType.test:
+                    split_file_paths = Path(data_dir) / "labels/main/test.txt"
+                elif split == DatasetSplitType.validation:
+                    split_file_paths = Path(data_dir) / "labels/main/val.txt"
+                with open(split_file_paths) as f:
+                    self.split_file_paths = f.read().splitlines()
+                self.image_data_dir = data_dir / _IMAGE_DATA_NAME / "images"
+                self.ocr_data_dir = data_dir / _OCR_DATA_NAME / "images"
 
-        for _, image_file_path_with_label in enumerate(split_file_paths):
-            image_file_path, label = image_file_path_with_label.split(" ")
-            yield DocumentInstance(
-                sample_id=Path(image_file_path).name,
-                image=Image(file_path=Path(image_data_dir) / image_file_path),
-                ocr=OCR(
-                    file_path=Path(ocr_data_dir)
-                    / image_file_path.replace(".tif", ".hocr.lstm"),
-                    ocr_type=OCRType.tesseract,
-                ),
-                gt=GroundTruth(
-                    classification=ClassificationGT(
-                        label=Label(value=int(label), name=_CLASSES[int(label)])
+            def __iter__(self) -> Generator[tuple[Path, Path, int], None, None]:
+                for image_file_path_with_label in self.split_file_paths:
+                    image_file_path, label = image_file_path_with_label.split(" ")
+                    ocr_file_path = Path(self.ocr_data_dir) / image_file_path.replace(
+                        ".tif", ".hocr.lstm"
                     )
-                ),
-            )
+                    image_file_path = Path(self.image_data_dir) / image_file_path
+                    yield image_file_path, ocr_file_path, label
+
+            def __len__(self) -> int:
+                return len(self.split_file_paths)
+
+        return SplitIterator(split=split, data_dir=Path(data_dir))
+
+    def _input_transform(self, sample: tuple[Path, Path, int]) -> DocumentInstance:
+        image_file_path, ocr_file_path, label = sample
+
+        return DocumentInstance(
+            sample_id=Path(image_file_path).name,
+            image=Image(file_path=image_file_path),
+            ocr=OCR(file_path=ocr_file_path, ocr_type=OCRType.tesseract),
+            gt=GroundTruth(
+                classification=ClassificationGT(
+                    label=Label(value=int(label), name=_CLASSES[int(label)])
+                )
+            ),
+        )

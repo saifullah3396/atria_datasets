@@ -410,7 +410,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         )
 
         # Build the split for the dataset
-        dataset.build_split(
+        dataset.build(
             split=split,
             preprocess_transform=preprocess_transform,
             access_token=access_token,

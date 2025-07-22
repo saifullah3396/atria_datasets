@@ -49,17 +49,15 @@
         }
     ],
     "python.analysis.include": [
-        "./atria",
-        "./atria_core/src",
-        "./atria_datasets/src",
-        "./atria_registry/src",
+        "../atria_core/src",
+        "../atria_datasets/src",
+        "../atria_registry/src",
 
     ],
     "python.analysis.extraPaths": [
-        "./atria",
-        "./atria_core/src",
-        "./atria_datasets/src",
-        "./atria_registry/src",
+        "../atria_core/src",
+        "../atria_datasets/src",
+        "../atria_registry/src",
     ],
     "python.defaultInterpreterPath": "./.venv/bin/python",
 }
