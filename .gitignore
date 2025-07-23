@@ -3,7 +3,6 @@
 **/**notebook.log
 atria.egg-info/
 outputs
-tmp/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -172,16 +171,3 @@ cython_debug/
 
 # VSCode
 .vscode/PythonImportHelper-v2-Completion.json
-test.ipynb
-test.py
-test2.ipynb
-test3.ipynb
-test4.ipynb
-test5.ipynb
-test2.py
-resnet18_wo_config.pt
-resnet18.pt
-test/
-test.jpg
-test5.py
-tmp2/
