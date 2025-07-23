@@ -18,9 +18,9 @@ declare -a available_datasets=(
     "icdar2013/default"
     # "doclaynet/2022.08" # too big, failing downloads
     "docvqa/with_msr_ocr" 
-    "publaynet/default" # too big, failing downloads
-    "pubtables1m/detection_1k" # too big, failing downloads
-    "pubtables1m/structure_1k" # too big, failing downloads
+    # "publaynet/default" # too big, failing downloads
+    # "pubtables1m/detection_1k" # too big, failing downloads
+    # "pubtables1m/structure_1k" # too big, failing downloads
 )
 
 
