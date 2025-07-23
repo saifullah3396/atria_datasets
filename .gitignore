@@ -184,3 +184,4 @@ resnet18.pt
 test/
 test.jpg
 test5.py
+tmp2/
