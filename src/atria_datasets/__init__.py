@@ -50,7 +50,7 @@ if TYPE_CHECKING:
         HTTPDownloader,
     )
     from atria_datasets.core.storage.deltalake_reader import DeltalakeReader
-    from atria_datasets.core.storage.deltalake_storage_manager import (
+    from atria_datasets.core.storage.deltalake_storage_manager_123123 import (
         DeltalakeStorageManager,
     )
     from atria_datasets.core.storage.msgpack_shard_writer import (

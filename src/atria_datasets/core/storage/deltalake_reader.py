@@ -1,5 +1,7 @@
 import logging
 from collections.abc import Sequence
+from typing import Any
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import pandas as pd
 import pyarrow.dataset as ds
@@ -12,7 +14,74 @@ logger = logging.getLogger(__name__)
 
 
 def transform_file_path(value: str, storage_dir: str, config_name: str) -> str:
-    return f"{storage_dir}/{config_name}/raw/{value}"
+    base_dir = f"{storage_dir}/{config_name}"
+    parsed = urlparse(value)
+    # Remove leading slash from path if exists, then join
+    path = parsed.path.lstrip("/")
+    new_path = f"{base_dir}/{path}"
+
+    # Rebuild the URL with the original scheme and the new path
+    transformed_url = urlunparse(
+        (parsed.scheme, "", new_path, "", parsed.query, parsed.fragment)
+    )
+    return transformed_url
+
+
+def get_presigned_url_with_original_query(
+    original_url: str,
+    s3_client,
+    bucket_name: str,
+    key_prefix: str,
+    expires_in: int = 3600,
+) -> str:
+    """
+    Generate a presigned S3 URL for the given original URL, preserving
+    its original query parameters by merging them with the presigned URL's query.
+
+    Args:
+        original_url: Original file URL (may include query params).
+        s3_client: boto3 S3 client.
+        bucket_name: S3 bucket name.
+        key_prefix: prefix to add before the key (e.g. branch/config path).
+        expires_in: Expiry seconds for presigned URL.
+
+    Returns:
+        Presigned URL string with merged query params.
+    """
+    parsed = urlparse(original_url)
+    original_query = parse_qs(parsed.query)
+    key_path = parsed.path.lstrip("/")  # strip leading slash for S3 key
+
+    # Generate presigned URL without original query params
+    presigned_url = s3_client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": bucket_name, "Key": f"{key_prefix}/{key_path}"},
+        ExpiresIn=expires_in,
+    )
+    parsed_presigned = urlparse(presigned_url)
+    presigned_query = parse_qs(parsed_presigned.query)
+
+    # Merge queries, original query params overwrite presigned if duplicated
+    merged_query = {**presigned_query, **original_query}
+
+    # Flatten merged query for urlencode
+    flat_query = []
+    for k, vlist in merged_query.items():
+        for v in vlist:
+            flat_query.append((k, v))
+    new_query = urlencode(flat_query)
+
+    # Rebuild full URL
+    return urlunparse(
+        (
+            parsed_presigned.scheme,
+            parsed_presigned.netloc,
+            parsed_presigned.path,
+            parsed_presigned.params,
+            new_query,
+            parsed_presigned.fragment,
+        )
+    )
 
 
 class DeltalakeReader(Sequence[T_BaseDataInstance]):
@@ -21,6 +90,7 @@ class DeltalakeReader(Sequence[T_BaseDataInstance]):
         table_path: str,
         data_model: type[T_BaseDataInstance],
         allowed_keys: set[str] | None = None,
+        **kwargs,
     ):
         self.path = table_path
         self.data_model = data_model
@@ -98,22 +168,24 @@ class InMemoryDeltalakeReader(DeltalakeReader):
             ]
         self._length = len(self._df)
 
+    def _process_row(self, row: dict) -> Any:
+        for key, value in row.items():
+            if (
+                isinstance(value, str)
+                and "file_path" in key
+                and self.storage_dir
+                and self.config_name
+            ):
+                row[key] = transform_file_path(
+                    value, self.storage_dir, self.config_name
+                )
+        return super()._process_row(row)
+
     def _load_and_process_rows(self, indices: list[int]) -> list[T_BaseDataInstance]:
         rows = self._df.iloc[indices]
         if self.allowed_keys:
             rows = rows[self.allowed_keys]
         row_dicts = rows.to_dict(orient="records")
-        for row in row_dicts:
-            for key, value in row.items():
-                if (
-                    isinstance(value, str)
-                    and "file_path" in key
-                    and self.storage_dir
-                    and self.config_name
-                ):
-                    row[key] = transform_file_path(
-                        value, self.storage_dir, self.config_name
-                    )
         return [self._process_row(row) for row in row_dicts]
 
     def dataframe(self) -> pd.DataFrame:
@@ -136,23 +208,27 @@ class LocalDeltalakeReader(DeltalakeReader):
                 access_key=self.storage_options["AWS_ACCESS_KEY_ID"],
                 secret_key=self.storage_options["AWS_SECRET_ACCESS_KEY"],
             )
-        file_uris = [file_uri.replace("lakefs://", "") for file_uri in file_uris]
-        self._dataset = ds.dataset(file_uris, filesystem=filesystem)
+            file_uris = [file_uri.replace("lakefs://", "") for file_uri in file_uris]
+            self._dataset = ds.dataset(file_uris, filesystem=filesystem)
+        else:
+            self._dataset = ds.dataset(self.path)
         self._length = self._dataset.count_rows()
+
+    def _process_row(self, row: dict) -> Any:
+        for key, value in row.items():
+            if (
+                isinstance(value, str)
+                and "file_path" in key
+                and self.storage_dir
+                and self.config_name
+            ):
+                row[key] = transform_file_path(
+                    value, self.storage_dir, self.config_name
+                )
+        return super()._process_row(row)
 
     def _load_and_process_rows(self, indices: list[int]) -> list[T_BaseDataInstance]:
         row_dicts = self._dataset.take(indices).to_pylist()
-        for row in row_dicts:
-            for key, value in row.items():
-                if (
-                    isinstance(value, str)
-                    and "file_path" in key
-                    and self.storage_dir
-                    and self.config_name
-                ):
-                    row[key] = transform_file_path(
-                        value, self.storage_dir, self.config_name
-                    )
         return [self._process_row(row) for row in row_dicts]
 
     def dataframe(self) -> pd.DataFrame:
@@ -185,24 +261,16 @@ class OnlineDeltalakeReader(LocalDeltalakeReader):
         self.branch_name = parts[3]
         self.config_name = parts[4]
 
-    def _generate_presigned_url(self, value: str) -> str:
-        try:
-            return self._s3_client.generate_presigned_url(
-                "get_object",
-                Params={
-                    "Bucket": self.repo_name,
-                    "Key": f"{self.branch_name}/{self.config_name}/{value}",
-                },
-                ExpiresIn=self.presign_expiry,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to generate presigned URL for {value}: {e}")
-            return value
-
     def _load_and_process_rows(self, indices: list[int]) -> list[T_BaseDataInstance]:
         row_dicts = self._dataset.take(indices).to_pylist()
         for row in row_dicts:
             for key, value in row.items():
                 if isinstance(value, str) and "file_path" in key:
-                    row[key] = self._generate_presigned_url(value)
+                    row[key] = get_presigned_url_with_original_query(
+                        value,
+                        self._s3_client,
+                        self.repo_name,
+                        f"{self.branch_name}/{self.config_name}",
+                        expires_in=self.presign_expiry,
+                    )
         return [self._process_row(row) for row in row_dicts]

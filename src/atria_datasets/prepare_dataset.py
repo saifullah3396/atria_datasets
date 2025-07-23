@@ -27,12 +27,14 @@ def main(
         num_processes=num_processes,
         dataset_load_mode=DatasetLoadingMode.in_memory,
     )
-    print(dataset)
+    logger.info(f"Loaded dataset:\n{dataset}")
     for sample in dataset.train:
-        sample.load()  # sanity check
+        sample.load()
         break
     if upload_to_hub:
-        dataset.upload_to_hub(name=name, overwrite_existing=overwrite_in_hub)
+        dataset.upload_to_hub(
+            name=name.replace("_", "-"), overwrite_existing=overwrite_in_hub
+        )
 
 
 if __name__ == "__main__":

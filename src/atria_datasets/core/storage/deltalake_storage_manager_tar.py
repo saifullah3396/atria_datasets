@@ -33,12 +33,16 @@ License: MIT
 """
 
 import multiprocessing as mp
-import queue
+import pickle
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
+import deltalake
 import pandas as pd
+import pyarrow as pa
 import tqdm
 from atria_core.logger.logger import get_logger
 
@@ -73,6 +77,7 @@ class SerializerWorker:
         self._tf = tf
         self._wds_writer: wds.ShardWriter | None = None
         self._current_shard = 0
+        self._offset = 0
         self._current_shard_path = None
         self._write_dir = write_dir
         self._split = split
@@ -96,27 +101,24 @@ class SerializerWorker:
             )
             file_path.parent.mkdir(parents=True, exist_ok=True)
             self._wds_writer = wds.ShardWriter(
-                str(file_path), maxcount=self._max_shard_size
+                str(file_path), maxcount=self._max_shard_size, verbose=0
             )
             self._current_shard = self._wds_writer.shard
             self._current_shard_path = (
                 Path("shards") / self._split / Path(self._wds_writer.fname).name
             )
-            logger.info(
-                f"Initializing WebDataset writer at {self._wds_writer.fname} with max shard size {self._max_shard_size}"
-            )
-
         if self._write_binary_tars and self._current_shard != self._wds_writer.shard:
             self._current_shard = self._wds_writer.shard
             self._current_shard_path = (
                 Path("shards") / self._split / Path(self._wds_writer.fname).name
             )
+            self._offset = 0
 
         sample: BaseDataInstance = self._tf(*inputs)
         if self._wds_writer is not None:
             sample_row = sample.to_row()
             for key in sample_row:
-                if "file_path" in key:
+                if "file_path" in key and sample_row[key] is not None:
                     file_path_key = key
                     content_key = key.replace("file_path", "content")
                     assert content_key in sample_row, (
@@ -127,21 +129,17 @@ class SerializerWorker:
                     assert content is not None, (
                         f"Content for key '{content_key}' is None. Expected a valid binary loaded content after load()."
                     )
-                    tar_content = {
-                        "__key__": str(sample.key),
-                        f"{content_key}": content,
-                    }
+
+                    tar_content = {"__key__": str(sample.key), content_key: content}
+                    self._wds_writer.write(tar_content)
+                    member = self._wds_writer.tarstream.tarstream.members[-1]
                     sample_row[file_path_key] = (
-                        f"tar://{self._current_shard_path}?path={sample.key}.{content_key}"
+                        f"{self._current_shard_path}?offset={self._offset + 1536}&length={member.size}"
                     )
                     sample_row[content_key] = None
-                    self._wds_writer.write(tar_content)
+                    self._offset = self._wds_writer.tarstream.tarstream.offset
             return sample_row
         else:
-            sample = sample.to_row()
-            for key in sample_row:
-                if "file_path" in key:
-                    sample[key] = "file://" + sample[key]
             return sample.to_row()
 
     def close(self) -> None:
@@ -151,7 +149,6 @@ class SerializerWorker:
         if self._wds_writer is not None:
             self._wds_writer.close()
             self._wds_writer = None
-            logger.info("Closed WebDataset writer.")
 
 
 class ProducerWorker(mp.Process):
@@ -159,52 +156,151 @@ class ProducerWorker(mp.Process):
         super().__init__(**kwargs)
         self.input_queue = input_queue
         self.output_queue = output_queue
-        self.serializer = SerializerWorker(**serializer_kwargs)
+        self.serializer_kwargs = serializer_kwargs
 
     def run(self):
+        serializer = SerializerWorker(
+            process_id=self._identity[0], **self.serializer_kwargs
+        )
         while True:
             item = self.input_queue.get()
             if item == "STOP":
                 break
             try:
-                result = self.serializer(item)
+                result = serializer(item)
                 self.output_queue.put(result)
             except Exception as e:
                 self.output_queue.put(e)
+        serializer.close()
+        self.output_queue.put("STOP")
 
 
-class ConsumerWorker(mp.Process):
-    def __init__(self, output_queue, write_batch_func, batch_size, **kwargs):
-        super().__init__(**kwargs)
-        self.output_queue = output_queue
-        self.write_batch = write_batch_func
-        self.batch_size = batch_size
+class ShardedDeltalakeStorageWriter(ABC):
+    def __init__(self, manager, split_iterator, split_dir, iterator, total):
+        self.manager = manager
+        self.split_iterator = split_iterator
+        self.split_dir = split_dir
+        self.iterator = iterator
+        self.total = total
 
-    def run(self):
-        batch = []
-        first_batch = True
+        self.batch = []
+        self.first_batch = True
+        self.write_batch_size = None
 
-        while True:
-            try:
-                result = self.output_queue.get(timeout=5)
-            except queue.Empty:
-                continue
+    def _write_batch(self):
+        logger.info(f"Writing batch of size {len(self.batch)} to storage.")
+        mode = "overwrite" if self.first_batch else "append"
+        print("self.batch,self.batch")
+        deltalake.write_deltalake(
+            self.split_dir,
+            pa.Table.from_pylist(
+                self.batch, schema=self.split_iterator.data_model.pa_schema()
+            ),
+            mode=mode,
+        )
+        self.first_batch = False
+        self.batch.clear()
 
-            if result == "STOP":
-                break
+    def _handle_batch_write(self, result):
+        self.batch.append(result)
 
+        if self.write_batch_size is None:
+            self.write_batch_size = self.manager._max_memory // len(
+                pickle.dumps(result)
+            )
+            logger.info(
+                f"Setting write batch size to {self.write_batch_size} based on max memory {self.manager._max_memory // 1000_000} MB"
+            )
+
+        if len(self.batch) >= self.write_batch_size:
+            self._write_batch()
+
+    @abstractmethod
+    def write(self):
+        pass
+
+
+class SerialStorageWriter(ShardedDeltalakeStorageWriter):
+    def write(self):
+        worker = SerializerWorker(
+            write_dir=self.manager._storage_dir / self.manager._config_name,
+            split=self.split_iterator.split.value,
+            tf=self.split_iterator._tf,
+            write_binary_tars=True,
+        )
+
+        for result in tqdm.tqdm(
+            map(worker, self.iterator),
+            desc="Writing to Deltalake",
+            total=self.total,
+            unit="rows",
+        ):
+            self._handle_batch_write(result)
+
+        if self.batch:
+            self._write_batch()
+
+        worker.close()
+
+
+class ParallelStorageWriter(ShardedDeltalakeStorageWriter):
+    def write(self):
+        input_queue = mp.Queue(maxsize=100)
+        output_queue = mp.Queue(maxsize=100)
+        serializer_kwargs = {
+            "write_dir": self.manager._storage_dir / self.manager._config_name,
+            "split": self.split_iterator.split.value,
+            "tf": self.split_iterator._tf,
+            "write_binary_tars": True,
+        }
+
+        num_producers = self.manager._num_processes - 1
+        producers = [
+            ProducerWorker(input_queue, output_queue, serializer_kwargs)
+            for _ in range(num_producers)
+        ]
+        for p in producers:
+            p.start()
+
+        # Send items to the input queue
+        for item in tqdm.tqdm(
+            self.iterator, desc="Writing to Deltalake", total=self.total, unit="rows"
+        ):
+            input_queue.put(item)
+
+            # Drain output queue while producers are working
+            while not output_queue.empty():
+                result = output_queue.get()
+                if result == "STOP":
+                    continue
+                if isinstance(result, Exception):
+                    logger.error(f"Error in producer: {result}")
+                    raise result
+                self._handle_batch_write(result)
+
+        # Send STOP signal to producers
+        for _ in producers:
+            input_queue.put("STOP")
+
+        # Count STOPs from output queue
+        stops_received = 0
+        while stops_received < num_producers:
+            result = output_queue.get()
             if isinstance(result, Exception):
+                logger.error(f"Error in producer: {result}")
                 raise result
+            if result == "STOP":
+                stops_received += 1
+            else:
+                self._handle_batch_write(result)
 
-            batch.append(result)
-            if len(batch) >= self.batch_size:
-                logger.info(f"Writing batch of size {len(batch)} to storage.")
-                self.write_batch(batch, is_first_batch=first_batch)
-                first_batch = False
-                batch = []
+        # Write remaining batch if any
+        if self.batch:
+            self._write_batch()
 
-        if batch:
-            self.write_batch(batch, is_first_batch=first_batch)
+        # Ensure producers terminate
+        for p in producers:
+            p.join()
 
 
 class DeltalakeStorageManager:
@@ -220,7 +316,7 @@ class DeltalakeStorageManager:
         storage_dir: str,
         config_name: str,
         num_processes: int = 8,
-        max_memory: int = 1000_000_1000,
+        max_memory: int = 1000_000_000,
     ):
         self._storage_dir = Path(storage_dir)
         self._config_name = config_name
@@ -341,17 +437,17 @@ class DeltalakeStorageManager:
         def map_file_path(file_path):
             if pd.isna(file_path):
                 return None  # skip NaN
-            if file_path.startswith("tar://"):
-                file_path = file_path.replace("tar://", "").split("?")[0]
-                tgt = str(Path(self._config_name) / file_path)
+            parsed = urlparse(file_path)
+            path = parsed.path
+
+            if path.startswith("shards/"):
+                tgt = str(Path(self._config_name) / path)
                 files_src_tgt.add(
-                    (str(Path(self._storage_dir) / self._config_name / file_path), tgt)
+                    (str(Path(self._storage_dir) / self._config_name / path), tgt)
                 )
-            elif file_path.startswith("file://"):
-                tgt = str(
-                    Path(self._config_name) / "raw" / file_path.replace("file://", "")
-                )
-                files_src_tgt.add((str(Path(data_dir) / file_path), tgt))
+            else:
+                tgt = str(Path(self._config_name) / path)
+                files_src_tgt.add((str(Path(data_dir) / path), tgt))
             return tgt
 
         for split in list(DatasetSplitType):
@@ -381,107 +477,31 @@ class DeltalakeStorageManager:
 
     def _write(self, split_iterator: "SplitIterator") -> Path:
         import itertools
-        import multiprocessing as mp
-
-        import deltalake
-        import pyarrow as pa
 
         split_dir = self.split_dir(split=split_iterator.split)
         logger.info(
             f"Preprocessing dataset split {split_iterator.split.value} to cached deltalake storage {split_dir}"
         )
-
         split_iterator.disable_tf()
-
-        first_batch = True
-
-        def write_batch(batch, is_first_batch=False):
-            mode = "overwrite" if is_first_batch else "append"
-            deltalake.write_deltalake(
-                split_dir,
-                pa.Table.from_pylist(
-                    batch, schema=split_iterator.data_model.pa_schema()
-                ),
-                mode=mode,
-            )
 
         try:
             total = len(split_iterator)
         except RuntimeError:
             total = None
 
-        # Choose the iterator, applying islice if _max_len is set
         iterator = iter(split_iterator)
         if total is not None:
-            iterator = itertools.islice(
-                iterator,
-                total,  # type: ignore
-            )
+            iterator = itertools.islice(iterator, total)
 
-        estimated_row_bytes = 0
         if self._num_processes <= 1:
-            batch = []
-            worker = SerializerWorker(
-                write_dir=self._storage_dir / self._config_name,
-                split=split_iterator.split.value,
-                tf=split_iterator._tf,
-                write_binary_tars=True,
+            writer = SerialStorageWriter(
+                self, split_iterator, split_dir, iterator, total
             )
-            for result in tqdm.tqdm(
-                map(worker, iterator),
-                desc="Writing to Deltalake",
-                total=total,
-                unit="rows",
-            ):
-                batch.append(result)
-
-                if len(batch) > 0 and estimated_row_bytes == 0:
-                    estimated_row_bytes += result.__sizeof__()
-                    self._write_batch_size = self._max_memory // estimated_row_bytes
-
-                if len(batch) >= self._write_batch_size:
-                    write_batch(batch, is_first_batch=first_batch)
-                    first_batch = False
-                    batch = []
-            if batch:
-                write_batch(batch, is_first_batch=first_batch)
-            worker.close()
         else:
-            input_queue = mp.Queue(maxsize=100)
-            output_queue = mp.Queue(maxsize=100)
-            serializer_kwargs = {
-                "write_dir": self._storage_dir / self._config_name,
-                "split": split_iterator.split.value,
-                "tf": split_iterator._tf,
-                "write_binary_tars": True,
-            }
+            writer = ParallelStorageWriter(
+                self, split_iterator, split_dir, iterator, total
+            )
 
-            producers = [
-                ProducerWorker(input_queue, output_queue, serializer_kwargs)
-                for _ in range(self._num_processes - 1)
-            ]
-
-            consumer = ConsumerWorker(output_queue, write_batch, self._write_batch_size)
-
-            consumer.start()
-            for p in producers:
-                p.start()
-
-            for item in tqdm.tqdm(
-                iterator, desc="Writing to Deltalake", total=total, unit="rows"
-            ):
-                input_queue.put(item)
-
-            for _ in producers:
-                input_queue.put("STOP")
-
-            for p in producers:
-                p.join()
-
-            output_queue.put("STOP")
-
-            consumer.join()
-
+        writer.write()
         split_iterator.enable_tf()
-
         return split_dir

@@ -146,7 +146,7 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         self, access_token: str | None = None, overwrite_existing: bool = False
     ) -> None:
         """Prepare cached splits using DeltaLake storage."""
-        from atria_datasets.core.storage.deltalake_storage_manager import (
+        from atria_datasets.core.storage.deltalake_storage_manager_tar import (
             DeltalakeStorageManager,
         )
 

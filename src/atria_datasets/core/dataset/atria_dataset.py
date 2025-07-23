@@ -251,7 +251,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         preprocess_transform: Callable | None = None,
         shard_storage_type: FileStorageType | None = None,
         access_token: str | None = None,
-        dataset_load_mode: DatasetLoadingMode = DatasetLoadingMode.in_memory,
+        dataset_load_mode: DatasetLoadingMode = DatasetLoadingMode.local_streaming,
         overwrite_existing_cached: bool = False,
         overwrite_existing_shards: bool = False,
         allowed_keys: set[str] | None = None,
@@ -318,7 +318,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         runtime_transforms: Callable | None = None,
         preprocess_transform: Callable | None = None,
         access_token: str | None = None,
-        dataset_load_mode: DatasetLoadingMode = DatasetLoadingMode.in_memory,
+        dataset_load_mode: DatasetLoadingMode = DatasetLoadingMode.local_streaming,
         overwrite_existing_cached: bool = False,
         overwrite_existing_shards: bool = False,
         allowed_keys: set[str] | None = None,
@@ -539,7 +539,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             List of (local_path, relative_path) tuples for all dataset files
         """
 
-        from atria_datasets.core.storage.deltalake_storage_manager import (
+        from atria_datasets.core.storage.deltalake_storage_manager_tar import (
             DeltalakeStorageManager,
         )
 
@@ -648,7 +648,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         self, access_token: str | None = None, overwrite_existing: bool = False
     ) -> None:
         """Prepare cached splits using DeltaLake storage."""
-        from atria_datasets.core.storage.deltalake_storage_manager import (
+        from atria_datasets.core.storage.deltalake_storage_manager_tar import (
             DeltalakeStorageManager,
         )
 
@@ -680,7 +680,6 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
                     data_dir=str(self._data_dir), access_token=access_token
                 )
                 logger.info(f"Caching split [{split.value}] to {self._storage_dir}")
-
                 storage_manager.write_split(
                     split_iterator=SplitIterator(
                         split=split,
