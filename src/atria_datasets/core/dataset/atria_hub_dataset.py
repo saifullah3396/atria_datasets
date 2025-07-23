@@ -38,11 +38,7 @@ from atria_core.types.datasets.metadata import DatasetMetadata
 from omegaconf import DictConfig, OmegaConf
 
 from atria_datasets.core.dataset.atria_dataset import AtriaDataset, DatasetLoadingMode
-from atria_datasets.core.storage.deltalake_reader import (
-    DeltalakeInMemoryReader,
-    DeltalakeLocalStreamReader,
-)
-from atria_datasets.core.storage.deltalake_streamer import DeltalakeOnlineStreamReader
+from atria_datasets.core.storage.deltalake_reader import DeltalakeReader
 from atria_datasets.core.storage.utilities import FileStorageType
 from atria_datasets.core.typing.common import T_BaseDataInstance
 
@@ -242,7 +238,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         Raises:
             ValueError: If the data instance type is not supported
         """
-        from atria_hub.api.datasets import DataInstanceType
+        from atriax_client.models.data_instance_type import DataInstanceType
 
         if self._dataset_info.data_instance_type == DataInstanceType.DOCUMENT_INSTANCE:
             return DocumentInstance
@@ -285,7 +281,9 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         Returns:
             DatasetInfo: Dataset metadata and information
         """
-        from atria_hub.api.datasets import Dataset as DatasetInfo
+        from atriax_client.models.dataset import (
+            Dataset as DatasetInfo,  # type: ignore[import-not-found]
+        )
 
         self._dataset_info: DatasetInfo = self._hub.datasets.get_by_name(
             username=self._username, name=self._dataset_name
@@ -359,7 +357,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             return
 
         if not self._downloads_prepared:
-            if self.is_dataset_downloaded(data_dir):
+            if self.is_dataset_downloaded(self._storage_dir):
                 logger.info(
                     f"Dataset {self._dataset_name} already exists in {self._storage_dir}. "
                     "Skipping download."
@@ -372,6 +370,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             self._hub.datasets.download_files(
                 dataset_repo_id=self._dataset_info.repo_id,
                 branch=self._branch,
+                config_dir=self._config_name,
                 destination_path=str(self._storage_dir),
             )
             self._downloads_prepared = True
@@ -468,23 +467,21 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
                 split=split.value,
             )
             logger.info(f"Streaming dataset split {split.value} from {path}")
-            return DeltalakeOnlineStreamReader(
-                path=path,
+            return DeltalakeReader.from_mode(
+                mode=self._dataset_load_mode,
+                table_path=path,
                 data_model=self.data_model,
                 allowed_keys=self._allowed_keys,
                 storage_options=storage_options,
             )
-        elif self._dataset_load_mode == DatasetLoadingMode.local_streaming:
-            logger.debug(f"Reading dataset split {split.value} from local storage")
-            return DeltalakeLocalStreamReader(  # type: ignore
-                path=str(self.split_dir(storage_dir=self._storage_dir, split=split)),
-                data_model=self.data_model,
-                allowed_keys=self._allowed_keys,
-            )
-        elif self._dataset_load_mode == DatasetLoadingMode.in_memory:
-            logger.debug(f"Reading dataset split {split.value} from local storage")
-            return DeltalakeInMemoryReader(
-                path=str(self.split_dir(storage_dir=self._storage_dir, split=split)),
+        else:
+            return DeltalakeReader.from_mode(
+                mode=self._dataset_load_mode,
+                table_path=str(
+                    self.split_dir(storage_dir=self._storage_dir, split=split)
+                ),
+                storage_dir=self._storage_dir,
+                config_name=self._config_name,
                 data_model=self.data_model,
                 allowed_keys=self._allowed_keys,
             )

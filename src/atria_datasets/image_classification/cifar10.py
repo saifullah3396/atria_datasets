@@ -28,6 +28,14 @@ _CLASSES = [
 
 @DATASET.register("cifar10")
 class Cifar10(AtriaImageDataset):
+    _REGISTRY_CONFIGS = {
+        "1k": {
+            "max_train_samples": 1000,
+            "max_test_samples": 1000,
+            "max_validation_samples": 1000,
+        }
+    }
+
     def _custom_download(self, data_dir: str, access_token: str | None = None) -> None:
         from torchvision.datasets import CIFAR10
 

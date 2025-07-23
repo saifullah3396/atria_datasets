@@ -1421,15 +1421,15 @@ wheels = [
 
 [[package]]
 name = "lakefs-spec"
-version = "0.11.5"
+version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fsspec" },
     { name = "lakefs" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c1/8a/b5c00a9fea8c69af757e03410914cc4f8de8ddf6c0602f602a71ea75d3f9/lakefs_spec-0.11.5.tar.gz", hash = "sha256:012e3f5de108ee044e8b00b1904206f8e04baf7cc2e495c9603440cca6885189", size = 479754, upload_time = "2025-07-16T13:29:01.29Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/32/86/742d809c24b741cf6becd01c603d4e009c06075be498b7414a579d1b5aec/lakefs_spec-0.12.0.tar.gz", hash = "sha256:977ddde992fe78096260ed6de5b884131965c34cad29910b10179e1ae48fe410", size = 503777, upload_time = "2025-07-22T09:18:03.511Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8a/de/c90793fec4054dd37d78d1a2962cfcb2b252f2732881fdd126dc029495ca/lakefs_spec-0.11.5-py3-none-any.whl", hash = "sha256:5c500532f2c09b9f22917c73e0d460861c803f9434dde114ead8b0940bbcc6f8", size = 23029, upload_time = "2025-07-16T13:28:58.381Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/45/1ef52068c0441f2b1a269cf27a1a63341824f90b5893592cd137fbdac983/lakefs_spec-0.12.0-py3-none-any.whl", hash = "sha256:0ccaccbbef5d9970705f52ae569b3275fcaabe32f597aae954a87976f50a1950", size = 23207, upload_time = "2025-07-22T09:18:01.664Z" },
 ]
 
 [[package]]

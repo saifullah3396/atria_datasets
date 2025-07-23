@@ -30,7 +30,7 @@ import json
 from abc import abstractmethod
 from collections.abc import Callable, Generator, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic
+from typing import TYPE_CHECKING, Any, Generic, Self
 
 from atria_core.constants import _DEFAULT_ATRIA_DATASETS_CACHE_DIR
 from atria_core.logger import get_logger
@@ -43,7 +43,6 @@ from atria_core.types import (
 )
 from atria_core.utilities.auto_config import AutoConfig
 from atria_core.utilities.repr import RepresentationMixin
-from gotrue import Optional
 
 from atria_datasets.core.constants import _DEFAULT_DOWNLOAD_PATH
 from atria_datasets.core.dataset.split_iterator import SplitIterator
@@ -248,9 +247,11 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         overwrite_existing_cached: bool = False,
         overwrite_existing_shards: bool = False,
         allowed_keys: set[str] | None = None,
+        num_processes: int = 8,
+        write_batch_size: int = 100000,
         build_kwargs: dict[str, Any] | None = None,
         sharded_storage_kwargs: dict[str, Any] | None = None,
-    ) -> Optional["AtriaDataset[T_BaseDataInstance]"]:
+    ) -> Self:  # noqa: F821
         """
         Load a dataset from the Atria registry.
 
@@ -298,6 +299,8 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             overwrite_existing_shards=overwrite_existing_shards,
             dataset_load_mode=dataset_load_mode,
             allowed_keys=allowed_keys,
+            num_processes=num_processes,
+            write_batch_size=write_batch_size,
             **(sharded_storage_kwargs or {}),
         )
         return dataset
@@ -313,6 +316,8 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         overwrite_existing_cached: bool = False,
         overwrite_existing_shards: bool = False,
         allowed_keys: set[str] | None = None,
+        num_processes: int = 8,
+        write_batch_size: int = 100000,
         enable_cached_splits: bool = True,
         **sharded_storage_kwargs,
     ) -> None:
@@ -338,17 +343,14 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             **sharded_storage_kwargs: Additional arguments for sharded storage
         """
         self._data_dir = self._validate_data_dir(data_dir)
-        self._config_name = config_name or self.__default_config_name__
+        self._config_name = (
+            config_name or f"{self.__default_config_name__}-{self.config_hash}"
+        )
+        self._num_processes = num_processes
+        self._write_batch_size = write_batch_size
         self._allowed_keys = allowed_keys
         self._dataset_load_mode = dataset_load_mode
-        if config_name == self.__default_config_name__:
-            self._storage_dir = (
-                Path(data_dir)
-                / "storage"
-                / f"{self.__default_config_name__}-{self.config_hash}"
-            )
-        else:
-            self._storage_dir = Path(data_dir) / "storage" / config_name
+        self._storage_dir = Path(data_dir) / "storage"
 
         # Prepare splits based on caching preference
         if enable_cached_splits:
@@ -366,7 +368,6 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
                 shard_storage_type=shard_storage_type,
                 preprocess_transform=preprocess_transform,
                 overwrite_existing=overwrite_existing_shards,
-                allowed_keys=allowed_keys,
                 **sharded_storage_kwargs,
             )
 
@@ -376,7 +377,11 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
                 split_iterator.output_transform = runtime_transforms
 
     def upload_to_hub(
-        self, name: str, branch: str = "main", is_public: bool = False
+        self,
+        name: str,
+        branch: str = "main",
+        is_public: bool = False,
+        overwrite_existing: bool = False,
     ) -> None:
         """
         Upload the dataset to Atria Hub for sharing and collaboration.
@@ -391,8 +396,8 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             Exception: If upload fails for any reason
         """
         try:
-            from atria_hub.api.datasets import DataInstanceType
             from atria_hub.hub import AtriaHub
+            from atriax_client.models.data_instance_type import DataInstanceType
 
             logger.info(
                 f"Uploading dataset {self.__class__.__name__} to hub with name {name} and config {branch}."
@@ -422,7 +427,8 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
                 dataset=dataset,
                 branch=branch,
                 config_dir=self._storage_dir.name,
-                dataset_files=self.get_dataset_files_from_dir(),
+                dataset_files=self.prepare_dataset_files_from_dir(),
+                overwrite_existing=overwrite_existing,
             )
         except ImportError:
             raise ImportError(
@@ -503,30 +509,22 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         def write_yaml_file(file_path: Path, data: dict) -> None:
             """Write data to YAML file, creating directories as needed."""
             if not file_path.exists():
-                logger.info(f"Saving {file_path}")
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(file_path, "w") as f:
                     yaml.dump(data, f, default_flow_style=False)
 
         # Save configuration
-        storage_dir = Path(storage_dir)
-        config_name = storage_dir.name
-        assert storage_dir.parent.name == "storage", (
-            f"Storage directory {storage_dir.parent} must be a subdirectory of 'storage'."
+        config_file_path = Path(storage_dir) / (
+            self.__default_config_path__.format(config_name=self._config_name)
         )
+        logger.info("Saving dataset configuration to %s", config_file_path)
+        write_yaml_file(config_file_path, self.config)
 
-        write_yaml_file(
-            storage_dir.parent
-            / self.__default_config_path__.format(config_name=config_name),
-            self.config,
-        )
+        metadata_file_path = Path(storage_dir) / self.__default_metadata_path__
+        logger.info("Saving dataset metadata to %s", metadata_file_path)
+        write_yaml_file(metadata_file_path, self.metadata.model_dump())
 
-        write_yaml_file(
-            storage_dir.parent / self.__default_metadata_path__,
-            self.metadata.model_dump(),
-        )
-
-    def get_dataset_files_from_dir(self) -> list[tuple[str, str]]:
+    def prepare_dataset_files_from_dir(self) -> list[tuple[str, str]]:
         """
         Get list of dataset files for upload or transfer operations.
 
@@ -536,31 +534,33 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         Returns:
             List of (local_path, relative_path) tuples for all dataset files
         """
+
         from atria_datasets.core.storage.deltalake_storage_manager import (
             DeltalakeStorageManager,
         )
 
         deltalake_storage_manager = DeltalakeStorageManager(
-            storage_dir=self._storage_dir
+            storage_dir=self._storage_dir, config_name=self._config_name
         )
 
         # Collect split files
-        config_name = Path(self._storage_dir).name + f"-{self.config_hash}"
         dataset_files = [
             (
-                str(Path(self._storage_dir).parent / self.__default_metadata_path__),
+                str(Path(self._storage_dir) / self.__default_metadata_path__),
                 self.__default_metadata_path__,
             ),
             (
                 str(
-                    Path(self._storage_dir).parent
-                    / self.__default_config_path__.format(config_name=config_name)
+                    Path(self._storage_dir)
+                    / self.__default_config_path__.format(config_name=self._config_name)
                 ),
-                self.__default_config_path__.format(config_name=config_name),
+                self.__default_config_path__.format(config_name=self._config_name),
             ),
         ]
+
+        # get all split files from deltalake storage manager
         dataset_files.extend(
-            deltalake_storage_manager.get_split_files(data_dir=self._data_dir)
+            deltalake_storage_manager.prepare_split_files(data_dir=self._data_dir)
         )
 
         return dataset_files
@@ -601,6 +601,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         preprocess_transform: Callable | None = None,
         overwrite_existing: bool = False,
         allowed_keys: set[str] | None = None,
+        num_processes: int = 8,
         **kwargs,
     ) -> None:
         """Prepare sharded storage for dataset splits."""
@@ -612,7 +613,10 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         )
 
         storage_manager = ShardedDatasetStorageManager(
-            storage_dir=str(storage_dir), storage_type=shard_storage_type, **kwargs
+            storage_dir=str(storage_dir),
+            storage_type=shard_storage_type,
+            num_processes=num_processes,
+            **kwargs,
         )
 
         for split, split_iterator in self._split_iterators.items():
@@ -653,9 +657,14 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             f"For online streaming, use the 'online_streaming' mode with AtriaHubDataset."
         )
 
-        self.save_dataset_info(self._storage_dir)
-        storage_manager = DeltalakeStorageManager(storage_dir=self._storage_dir)
+        storage_manager = DeltalakeStorageManager(
+            storage_dir=self._storage_dir,
+            config_name=self._config_name,
+            num_processes=self._num_processes,
+            write_batch_size=self._write_batch_size,
+        )
 
+        info_saved = False
         for split in self._available_splits():
             split_exists = storage_manager.split_exists(split=split)
             if split_exists and overwrite_existing:
@@ -668,21 +677,36 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
                     data_dir=str(self._data_dir), access_token=access_token
                 )
                 logger.info(f"Caching split [{split.value}] to {self._storage_dir}")
+
+                class OutputTransformer:
+                    def __init__(self, data_dir: str):
+                        self._data_dir = data_dir
+
+                    def __call__(
+                        self, sample: Any | T_BaseDataInstance
+                    ) -> T_BaseDataInstance:
+                        return sample.load().to_relative_file_paths(
+                            data_dir=self._data_dir
+                        )
+
                 storage_manager.write_split(
                     split_iterator=SplitIterator(
                         split=split,
                         data_model=self.data_model,
                         input_transform=self._input_transform,
+                        output_transform=OutputTransformer(self._data_dir),
                         base_iterator=self._split_iterator(split, self._data_dir),
                         max_len=self.get_max_split_samples(split),
                     )
                 )
+                if not info_saved:
+                    self.save_dataset_info(self._storage_dir)
             else:
                 logger.info(
                     f"Loading cached split {split.value} from {storage_manager.split_dir(split)}"
                 )
 
-            # Load split from storage
+        for split in self._available_splits():
             self._split_iterators[split] = storage_manager.read_split(
                 split=split,
                 data_model=self.data_model,

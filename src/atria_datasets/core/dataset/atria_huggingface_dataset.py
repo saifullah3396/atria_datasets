@@ -113,6 +113,15 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
             self._hf_split_generators = self._dataset_builder._split_generators(
                 download_manager
             )
+            HF_SPLIT_TO_ATRIA_SPLIT = {
+                "train": DatasetSplitType.train,
+                "validation": DatasetSplitType.validation,
+                "test": DatasetSplitType.test,
+            }
+            self._hf_split_generators = {
+                HF_SPLIT_TO_ATRIA_SPLIT[split_generator.name]: split_generator
+                for split_generator in self._hf_split_generators
+            }
             self._downloads_prepared = True
 
     def _prepare_splits(
@@ -134,28 +143,22 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
             )
 
     def _prepare_cached_splits(
-        self,
-        data_dir: str,
-        storage_dir: str,
-        split: DatasetSplitType | None = None,
-        access_token: str | None = None,
-        write_batch_size: int = 100000,
-        overwrite_existing: bool = False,
-        allowed_keys: set[str] | None = None,
+        self, access_token: str | None = None, overwrite_existing: bool = False
     ) -> None:
         """Prepare cached splits using DeltaLake storage."""
         from atria_datasets.core.storage.deltalake_storage_manager import (
             DeltalakeStorageManager,
         )
 
-        self._dataset_builder = self._prepare_dataset_builder(data_dir)
-        self.prepare_downloads(data_dir=str(data_dir), access_token=access_token)
-        self.save_dataset_info(storage_dir)
         storage_manager = DeltalakeStorageManager(
-            storage_dir=str(storage_dir), write_batch_size=write_batch_size
+            storage_dir=str(self._storage_dir),
+            config_name=self._config_name,
+            num_processes=self._num_processes,
+            write_batch_size=self._write_batch_size,
         )
 
-        for split in self._available_splits():
+        info_saved = False
+        for split in list(DatasetSplitType):
             split_exists = storage_manager.split_exists(split=split)
             if split_exists and overwrite_existing:
                 logger.warning(f"Overwriting existing cached split {split.value}")
@@ -163,13 +166,20 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
                 split_exists = False
 
             if not split_exists:
-                logger.info(f"Caching split [{split.value}] to {storage_dir}")
+                self._dataset_builder = self._prepare_dataset_builder(self._data_dir)
+                self.prepare_downloads(
+                    data_dir=str(self._data_dir), access_token=access_token
+                )
+                if split not in self._available_splits():
+                    continue
+                if not info_saved:
+                    self.save_dataset_info(self._storage_dir)
                 storage_manager.write_split(
                     split_iterator=SplitIterator(
                         split=split,
                         data_model=self.data_model,
                         input_transform=self._input_transform,
-                        base_iterator=self._split_iterator(split, data_dir),
+                        base_iterator=self._split_iterator(split, self._data_dir),
                         max_len=self.get_max_split_samples(split),
                     )
                 )
@@ -180,7 +190,7 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
 
             # Load split from storage
             self._split_iterators[split] = storage_manager.read_split(
-                split=split, data_model=self.data_model, allowed_keys=allowed_keys
+                split=split, data_model=self.data_model, allowed_keys=self._allowed_keys
             )
 
     def _available_splits(self) -> list[DatasetSplitType]:
@@ -190,21 +200,7 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         Returns:
             List[DatasetSplitType]: A list of available dataset splits.
         """
-        splits = []
-        for split_generator in self._hf_split_generators:
-            HF_SPLIT_TO_ATRIA_SPLIT = {
-                "train": DatasetSplitType.train,
-                "validation": DatasetSplitType.validation,
-                "test": DatasetSplitType.test,
-            }
-            splits.append(HF_SPLIT_TO_ATRIA_SPLIT[split_generator.name])
-        self._hf_split_generators = {
-            split.value: split_generator
-            for split, split_generator in zip(
-                splits, self._hf_split_generators, strict=True
-            )
-        }
-        return splits
+        return list(self._hf_split_generators.keys())
 
     def _prepare_dataset_builder(self, data_dir: str) -> "datasets.DatasetBuilder":
         """

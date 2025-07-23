@@ -1,30 +1,40 @@
 import fire
-import torch
 from atria_core.logger import get_logger
+
+from atria_datasets.core.dataset.atria_dataset import DatasetLoadingMode
 
 logger = get_logger(__name__)
 
-torch.set_printoptions(profile="short", threshold=10)
-
 
 def main(
-    name,
+    name: str,
+    config_name: str,
     access_token: str | None = None,
     overwrite_existing_cached: bool = False,
     overwrite_existing_shards: bool = False,
+    num_processes: int = 8,
+    write_batch_size: int = 100000,
+    upload_to_hub: bool = False,
+    overwrite_in_hub: bool = True,
 ):
     from atria_datasets import AtriaDataset
 
-    logger.info(f"Loading dataset: {name}")
     dataset = AtriaDataset.load_from_registry(
         name=name,
+        config_name=config_name,
         overwrite_existing_cached=overwrite_existing_cached,
         overwrite_existing_shards=overwrite_existing_shards,
         access_token=access_token,
+        num_processes=num_processes,
+        write_batch_size=write_batch_size,
+        dataset_load_mode=DatasetLoadingMode.in_memory,
     )
+    print(dataset)
     for sample in dataset.train:
-        pass  # sanity check
-    # dataset.upload_to_hub(name=name)
+        sample.load()  # sanity check
+        break
+    if upload_to_hub:
+        dataset.upload_to_hub(name=name, overwrite_existing=overwrite_in_hub)
 
 
 if __name__ == "__main__":

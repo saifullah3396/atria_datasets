@@ -181,3 +181,6 @@ test5.ipynb
 test2.py
 resnet18_wo_config.pt
 resnet18.pt
+test/
+test.jpg
+test5.py

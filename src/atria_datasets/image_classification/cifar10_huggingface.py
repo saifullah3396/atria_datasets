@@ -8,7 +8,14 @@ from atria_datasets import DATASET, AtriaHuggingfaceImageDataset
 @DATASET.register("huggingface_cifar10")
 class HuggingfaceCifar10(AtriaHuggingfaceImageDataset):
     _REGISTRY_CONFIGS = {
-        "plain_text": {"hf_repo": "uoft-cs/cifar10", "hf_config_name": "plain_text"}
+        "plain_text": {"hf_repo": "uoft-cs/cifar10", "hf_config_name": "plain_text"},
+        "plain_text_1k": {
+            "hf_repo": "uoft-cs/cifar10",
+            "hf_config_name": "plain_text",
+            "max_train_samples": 1000,
+            "max_test_samples": 1000,
+            "max_validation_samples": 1000,
+        },
     }
 
     def _input_transform(self, sample: dict[str, Any]) -> ImageInstance:

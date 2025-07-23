@@ -23,6 +23,7 @@ class DeltalakeOnlineStreamReader(Sequence[T_BaseDataInstance]):
         self.path = path
         self.repo_name = self.path.split("/")[2]
         self.branch_name = self.path.split("/")[3]
+        self.config_name = self.path.split("/")[4]
         self.data_model = data_model
         self.allowed_keys = allowed_keys
         self.storage_options = storage_options or {}
@@ -86,12 +87,14 @@ class DeltalakeOnlineStreamReader(Sequence[T_BaseDataInstance]):
     def _convert_paths_to_presigned_urls(self, row: dict) -> dict:
         for key, value in row.items():
             if isinstance(value, str) and "file_path" in key:
+                if "shards" not in value:
+                    value = f"raw/{value}"
                 try:
                     presigned_url = self._s3_client.generate_presigned_url(  # type: ignore
                         "get_object",
                         Params={
                             "Bucket": self.repo_name,
-                            "Key": f"{self.branch_name}/" + str(value),
+                            "Key": f"{self.branch_name}/{self.config_name}/{value}",
                         },
                         ExpiresIn=self.presign_expiry,
                     )
