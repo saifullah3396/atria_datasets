@@ -154,7 +154,6 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
             storage_dir=str(self._storage_dir),
             config_name=self._config_name,
             num_processes=self._num_processes,
-            write_batch_size=self._write_batch_size,
         )
 
         info_saved = False

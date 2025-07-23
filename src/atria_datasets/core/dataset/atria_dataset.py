@@ -55,6 +55,14 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+class OutputTransformer:
+    def __init__(self, data_dir: str):
+        self._data_dir = data_dir
+
+    def __call__(self, sample: Any | T_BaseDataInstance) -> T_BaseDataInstance:
+        return sample.load().to_relative_file_paths(data_dir=self._data_dir)
+
+
 class DatasetLoadingMode(str, enum.Enum):
     """
     Enum to represent the streaming mode of the dataset.
@@ -248,7 +256,6 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         overwrite_existing_shards: bool = False,
         allowed_keys: set[str] | None = None,
         num_processes: int = 8,
-        write_batch_size: int = 100000,
         build_kwargs: dict[str, Any] | None = None,
         sharded_storage_kwargs: dict[str, Any] | None = None,
     ) -> Self:  # noqa: F821
@@ -300,7 +307,6 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             dataset_load_mode=dataset_load_mode,
             allowed_keys=allowed_keys,
             num_processes=num_processes,
-            write_batch_size=write_batch_size,
             **(sharded_storage_kwargs or {}),
         )
         return dataset
@@ -317,7 +323,6 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         overwrite_existing_shards: bool = False,
         allowed_keys: set[str] | None = None,
         num_processes: int = 8,
-        write_batch_size: int = 100000,
         enable_cached_splits: bool = True,
         **sharded_storage_kwargs,
     ) -> None:
@@ -347,7 +352,6 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             config_name or f"{self.__default_config_name__}-{self.config_hash}"
         )
         self._num_processes = num_processes
-        self._write_batch_size = write_batch_size
         self._allowed_keys = allowed_keys
         self._dataset_load_mode = dataset_load_mode
         self._storage_dir = Path(data_dir) / "storage"
@@ -661,7 +665,6 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             storage_dir=self._storage_dir,
             config_name=self._config_name,
             num_processes=self._num_processes,
-            write_batch_size=self._write_batch_size,
         )
 
         info_saved = False
@@ -677,17 +680,6 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
                     data_dir=str(self._data_dir), access_token=access_token
                 )
                 logger.info(f"Caching split [{split.value}] to {self._storage_dir}")
-
-                class OutputTransformer:
-                    def __init__(self, data_dir: str):
-                        self._data_dir = data_dir
-
-                    def __call__(
-                        self, sample: Any | T_BaseDataInstance
-                    ) -> T_BaseDataInstance:
-                        return sample.load().to_relative_file_paths(
-                            data_dir=self._data_dir
-                        )
 
                 storage_manager.write_split(
                     split_iterator=SplitIterator(

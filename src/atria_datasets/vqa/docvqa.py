@@ -1,6 +1,6 @@
 import json
 import pickle
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from pathlib import Path
 
 import pandas as pd
@@ -42,9 +42,12 @@ _HOMEPAGE = "https://rrc.cvc.uab.es/?ch=13"
 
 _LICENSE = "Apache-2.0 license"
 
-_URLS = [
-    # Add actual download URLs here when available
-]
+_URLS = {
+    "docvqa": (
+        "https://drive.google.com/file/d/1TlXqyA7HSkD9SmT1nL-SN8412TH6CI49/view?usp=sharing",
+        ".zip",
+    )
+}
 
 
 def find_answers_in_words(words, answers, extraction_method="v1"):
@@ -108,11 +111,11 @@ class DocVQA(AtriaDocumentDataset):
 
     def _split_iterator(
         self, split: DatasetSplitType, data_dir: str
-    ) -> Generator[DocumentInstance, None, None]:
+    ) -> Iterable[DocumentInstance]:
         class SplitIterator:
             def __init__(self, split: DatasetSplitType, data_dir: str):
                 self.split = split
-                self.data_dir = Path(data_dir)
+                self.data_dir = Path(data_dir) / "docvqa"
                 self.answers_extraction_method = getattr(
                     self, "answers_extraction_method", "v1"
                 )
@@ -134,6 +137,7 @@ class DocVQA(AtriaDocumentDataset):
                     raise FileNotFoundError(
                         f"Data directory {self.data_dir} does not exist. You must download the dataset first from homepage: {_HOMEPAGE}"
                     )
+                self.preprocessed_dataset = self._load_and_preprocess_dataset()
 
             def _read_dataset_from_filepath(self, filepath: str):
                 with open(filepath) as f:
@@ -346,33 +350,28 @@ class DocVQA(AtriaDocumentDataset):
                 return preprocessed_dataset
 
             def __iter__(self) -> Generator[DocumentInstance, None, None]:
-                preprocessed_dataset = self._load_and_preprocess_dataset()
-                for sample in preprocessed_dataset:
-                    yield DocumentInstance(
-                        sample_id=Path(sample["image_file_path"]).name,
-                        image=Image(file_path=sample["image_file_path"]),
-                        gt=GroundTruth(
-                            vqa=VisualQuestionAnswerGT(
-                                qa_pair=QuestionAnswerPair(
-                                    id=sample["question_id"],
-                                    question_text=sample["question"],
-                                    answer_start=sample["answer_start_indices"],
-                                    answer_end=sample["answer_end_indices"],
-                                    answer_text=sample["gold_answers"],
-                                ),
-                                words=sample["words"],
-                                word_bboxes=BoundingBoxList(
-                                    value=sample["word_bboxes"]
-                                ),
-                                segment_level_bboxes=BoundingBoxList(
-                                    value=sample["segment_level_bboxes"]
-                                ),
-                            )
-                        ),
-                    )
-
-            def __len__(self) -> int:
-                dataset = self._read_dataset_from_filepath(str(self.filepath))
-                return len(dataset)
+                yield from self.preprocessed_dataset
 
         return SplitIterator(split=split, data_dir=data_dir)
+
+    def _input_transform(self, sample: dict) -> DocumentInstance:
+        return DocumentInstance(
+            sample_id=Path(sample["image_file_path"]).name,
+            image=Image(file_path=sample["image_file_path"]),
+            gt=GroundTruth(
+                vqa=VisualQuestionAnswerGT(
+                    qa_pair=QuestionAnswerPair(
+                        id=sample["question_id"],
+                        question_text=sample["question"],
+                        answer_start=sample["answer_start_indices"],
+                        answer_end=sample["answer_end_indices"],
+                        answer_text=sample["gold_answers"],
+                    ),
+                    words=sample["words"],
+                    word_bboxes=BoundingBoxList(value=sample["word_bboxes"]),
+                    segment_level_bboxes=BoundingBoxList(
+                        value=sample["segment_level_bboxes"]
+                    ),
+                )
+            ),
+        )

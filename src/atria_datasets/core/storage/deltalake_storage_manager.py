@@ -33,6 +33,7 @@ License: MIT
 """
 
 import multiprocessing as mp
+import pickle
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -80,12 +81,12 @@ class DeltalakeStorageManager:
         storage_dir: str,
         config_name: str,
         num_processes: int = 8,
-        write_batch_size: int = 100000,
+        max_memory: int = 1000_000_000,
     ):
         self._storage_dir = Path(storage_dir)
         self._config_name = config_name
         self._num_processes = num_processes
-        self._write_batch_size = write_batch_size
+        self._max_memory = max_memory
 
         if not self._storage_dir.exists():
             self._storage_dir.mkdir(parents=True, exist_ok=True)
@@ -268,6 +269,7 @@ class DeltalakeStorageManager:
                 total,  # type: ignore
             )
 
+        write_batch_size = None
         if self._num_processes == 0:
             # Single process mode
             batch = []
@@ -278,7 +280,12 @@ class DeltalakeStorageManager:
                 unit="rows",
             ):
                 batch.append(result)
-                if len(batch) >= self._write_batch_size:
+                if write_batch_size is None:
+                    write_batch_size = self._max_memory // len(pickle.dumps(result))
+                    logger.info(
+                        f"Setting write batch size to {write_batch_size} based on max memory {self._max_memory // 1000_000} MB"
+                    )
+                if len(batch) >= write_batch_size:
                     write_batch(batch, is_first_batch=first_batch)
                     first_batch = False
                     batch = []
@@ -294,7 +301,12 @@ class DeltalakeStorageManager:
                     unit="rows",
                 ):
                     batch.append(result)
-                    if len(batch) >= self._write_batch_size:
+                    if write_batch_size is None:
+                        write_batch_size = self._max_memory // len(pickle.dumps(result))
+                        logger.info(
+                            f"Setting write batch size to {write_batch_size} based on max memory {self._max_memory}"
+                        )
+                    if len(batch) >= write_batch_size:
                         write_batch(batch, is_first_batch=first_batch)
                         first_batch = False
                         batch = []  # Reset batch

@@ -1,17 +1,14 @@
 from atria_registry.module_registry import ModuleRegistry
 from atria_registry.registry_group import RegistryGroup
-from utilities import MockClass2, MockClass3, MockClass4, MockDatasetClass
+from utilities import MockClass3, MockClass4, MockDatasetClass
 
-from atria_datasets import BATCH_SAMPLER, DATA_PIPELINE, DATA_TRANSFORM, DATASET
+from atria_datasets import BATCH_SAMPLER, DATA_PIPELINE, DATASET
 
 
 def test_registry_imports():
     assert DATASET == ModuleRegistry().DATASET and isinstance(DATASET, RegistryGroup)
     assert DATA_PIPELINE == ModuleRegistry().DATA_PIPELINE and isinstance(
         DATA_PIPELINE, RegistryGroup
-    )
-    assert DATA_TRANSFORM == ModuleRegistry().DATA_TRANSFORM and isinstance(
-        DATA_TRANSFORM, RegistryGroup
     )
     assert BATCH_SAMPLER == ModuleRegistry().BATCH_SAMPLER and isinstance(
         BATCH_SAMPLER, RegistryGroup
@@ -35,7 +32,6 @@ def test_get_registry_group_non_existing():
 def test_register_all_modules():
     ModuleRegistry()["DATASET"].register("test_module1")(MockDatasetClass)
     ModuleRegistry()["DATASET"].register("test_group/test_module2")(MockDatasetClass)
-    ModuleRegistry()["DATA_TRANSFORM"].register("test_module2")(MockClass2)
     ModuleRegistry()["BATCH_SAMPLER"].register("test_module3")(MockClass3)
     ModuleRegistry()["BATCH_SAMPLER"].register("test_module4")(MockClass4)
     ModuleRegistry().register_all_modules()
@@ -56,6 +52,5 @@ def test_register_all_modules():
     assert_module_in_registry(
         "dataset/test_group/test_module2", "mock_config", "DATASET"
     )
-    assert_module_in_registry("data_transform", "test_module2", "DATA_TRANSFORM")
     assert_module_in_registry("batch_sampler", "test_module3", "BATCH_SAMPLER")
     assert_module_in_registry("batch_sampler", "test_module4", "BATCH_SAMPLER")

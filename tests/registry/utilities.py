@@ -1,8 +1,5 @@
-from atria_core.types import AtriaDatasetConfig
-
-
 class MockDatasetClass:
-    _REGISTRY_CONFIGS = [AtriaDatasetConfig(config_name="mock_config")]
+    _REGISTRY_CONFIGS = {"mock_config": {}}
 
 
 class MockClass1:

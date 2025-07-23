@@ -13,7 +13,6 @@ def main(
     overwrite_existing_cached: bool = False,
     overwrite_existing_shards: bool = False,
     num_processes: int = 8,
-    write_batch_size: int = 100000,
     upload_to_hub: bool = False,
     overwrite_in_hub: bool = True,
 ):
@@ -26,7 +25,6 @@ def main(
         overwrite_existing_shards=overwrite_existing_shards,
         access_token=access_token,
         num_processes=num_processes,
-        write_batch_size=write_batch_size,
         dataset_load_mode=DatasetLoadingMode.in_memory,
     )
     print(dataset)

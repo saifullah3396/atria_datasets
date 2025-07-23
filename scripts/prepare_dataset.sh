@@ -5,7 +5,7 @@ declare -a available_datasets=(
     # "cifar10/1k"
     # "huggingface_cifar10/plain_text_1k"
     # "tobacco3482/image_with_ocr"
-    "rvlcdip/image_with_ocr_1k"
+    # "rvlcdip/image_with_ocr_1k"
     # "mnist/mnist_1k"
     # "cord/default"
     # "funsd/default"

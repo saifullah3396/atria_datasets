@@ -1,5 +1,5 @@
 def test_imports():
-    from atria_datasets.datasets import (
+    from atria_datasets import (
         AtriaDataset,  # noqa  # noqa
         AtriaDocumentDataset,  # noqa
         AtriaHuggingfaceDataset,  # noqa
