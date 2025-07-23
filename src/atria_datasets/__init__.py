@@ -33,7 +33,9 @@ if TYPE_CHECKING:
         AtriaDataset,
         AtriaDocumentDataset,
         AtriaImageDataset,
+        DatasetLoadingMode,
     )
+    from atria_datasets.core.dataset.atria_hub_dataset import AtriaHubDataset
     from atria_datasets.core.dataset.atria_huggingface_dataset import (
         AtriaHuggingfaceDataset,
         AtriaHuggingfaceDocumentDataset,
@@ -50,7 +52,7 @@ if TYPE_CHECKING:
         HTTPDownloader,
     )
     from atria_datasets.core.storage.deltalake_reader import DeltalakeReader
-    from atria_datasets.core.storage.deltalake_storage_manager_123123 import (
+    from atria_datasets.core.storage.deltalake_storage_manager import (
         DeltalakeStorageManager,
     )
     from atria_datasets.core.storage.msgpack_shard_writer import (
@@ -76,12 +78,14 @@ __getattr__, __dir__, __all__ = lazy.attach(
             "AtriaDataset",
             "AtriaDocumentDataset",
             "AtriaImageDataset",
+            "DatasetLoadingMode",
         ],
         "core.dataset.atria_huggingface_dataset": [
             "AtriaHuggingfaceDataset",
             "AtriaHuggingfaceDocumentDataset",
             "AtriaHuggingfaceImageDataset",
         ],
+        "core.dataset.atria_hub_dataset": ["AtriaHubDataset"],
         "core.dataset.split_iterator": ["SplitIterator"],
         "core.dataset_splitters.standard_splitter": ["StandardSplitter"],
         "core.download_manager.download_file_info": ["DownloadFileInfo"],

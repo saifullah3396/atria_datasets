@@ -24,7 +24,7 @@ License: MIT
 import hashlib
 import re
 from pathlib import Path
-from urllib.parse import ParseResult, urlparse
+from urllib.parse import ParseResult, urlparse, urlunparse
 
 from atria_core.utilities.repr import RepresentationMixin
 
@@ -114,6 +114,26 @@ class DownloadFileInfo(RepresentationMixin):
         return hashlib.sha256(self.url.encode()).hexdigest()
 
     @property
+    def hashed_url_without_part(self) -> str:
+        """
+        Generates a SHA-256 hash of the URL without the part file extension.
+
+        Returns:
+            str: The hashed URL as a hexadecimal string.
+        """
+        url_without_part = urlunparse(
+            (
+                self.parsed_url.scheme,
+                self.parsed_url.netloc,
+                str(Path(self.parsed_url.path).with_suffix("")),
+                self.parsed_url.params,
+                self.parsed_url.query,
+                self.parsed_url.fragment,
+            )
+        )
+        return hashlib.sha256(url_without_part.encode()).hexdigest()
+
+    @property
     def url_path_ext(self) -> str:
         """
         Extracts the file extension(s) from the URL path.
@@ -149,7 +169,7 @@ class DownloadFileInfo(RepresentationMixin):
         """
         if self.is_part_file:
             return self.download_dir / (
-                self.hashed_url + Path(self.parsed_url.path).suffixes[-2]
+                self.hashed_url_without_part + Path(self.parsed_url.path).suffixes[-2]
             )
         else:
             return self.download_path
@@ -162,7 +182,10 @@ class DownloadFileInfo(RepresentationMixin):
         Returns:
             Path: The path to the extracted directory.
         """
-        return self.download_dir / "extracted" / self.hashed_url
+        if self.is_part_file:
+            return self.data_dir / (self.hashed_url_without_part)
+        else:
+            return self.data_dir / self.hashed_url
 
     @property
     def is_part_file(self) -> bool:

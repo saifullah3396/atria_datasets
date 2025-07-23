@@ -1,9 +1,5 @@
 from atria_registry import RegistryGroup
 
-from atria_datasets.core.dataset.atria_huggingface_dataset import (
-    AtriaHuggingfaceDocumentDataset,
-)
-
 
 class DatasetRegistryGroup(RegistryGroup):
     """
@@ -26,6 +22,10 @@ class DatasetRegistryGroup(RegistryGroup):
         """
 
         def decorator(decorated_class):
+            from atria_datasets.core.dataset.atria_huggingface_dataset import (
+                AtriaHuggingfaceDocumentDataset,
+            )
+
             if not hasattr(decorated_class, "_REGISTRY_CONFIGS"):
                 decorated_class._REGISTRY_CONFIGS = {}
             configs = decorated_class._REGISTRY_CONFIGS

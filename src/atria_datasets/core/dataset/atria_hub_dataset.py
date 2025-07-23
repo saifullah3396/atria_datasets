@@ -35,7 +35,6 @@ from atria_core.types import (
     SplitConfig,
 )
 from atria_core.types.datasets.metadata import DatasetMetadata
-from omegaconf import DictConfig, OmegaConf
 
 from atria_datasets.core.dataset.atria_dataset import AtriaDataset, DatasetLoadingMode
 from atria_datasets.core.storage.deltalake_reader import DeltalakeReader
@@ -126,6 +125,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
     def load_from_hub(
         cls,
         name: str,
+        branch: str = "main",
         config_name: str | None = None,
         data_dir: str | None = None,
         preprocess_transform: Callable | None = None,
@@ -180,6 +180,9 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         )
         if data_dir is None:
             data_dir = _DEFAULT_ATRIA_DATASETS_CACHE_DIR / dataset_name
+            logger.warning(
+                f"No data_dir provided. Using default cache directory:\n{data_dir}"
+            )
         dataset.build(
             data_dir=data_dir,
             config_name=config_name,
@@ -211,18 +214,16 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         if "/" not in name:
             raise ValueError(
                 f"Invalid dataset name format: {name}. "
-                "Expected format is 'username/dataset_name' or 'username/dataset_name/branch'."
+                "Expected format is 'username/dataset_name'."
             )
 
         parts = name.split("/")
         if len(parts) == 2:
             return parts[0], parts[1], None
-        elif len(parts) == 3:
-            return parts[0], parts[1], parts[2]
         else:
             raise ValueError(
                 f"Invalid dataset name format: {name}. "
-                "Expected format is 'username/dataset_name' or 'username/dataset_name/branch'."
+                "Expected format is 'username/dataset_name'."
             )
 
     # ==================== Properties ====================
@@ -290,19 +291,16 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         )
         self._branch = self._branch or self._dataset_info.default_branch
         self._repo_path = f"lakefs://{self._dataset_info.repo_id}/{self._branch}"
+        try:
+            self._config = self._hub.datasets.get_config(
+                self._dataset_info.repo_id,
+                branch=self._branch,
+                config_name=self._config_name,
+            )
+        except RuntimeError as e:
+            logger.error(f"Failed to load dataset config: {e}")
+            raise e
         return self._dataset_info
-
-    def _initialize_config(self) -> DictConfig:
-        """
-        Load and initialize the dataset configuration.
-
-        Returns:
-            DictConfig: The dataset configuration from the hub
-        """
-        config = self._hub.datasets.get_config(
-            self._dataset_info.repo_id, branch=self._branch
-        )
-        return OmegaConf.create(config)
 
     # ==================== Path Management ====================
 
@@ -357,15 +355,8 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             return
 
         if not self._downloads_prepared:
-            if self.is_dataset_downloaded(self._storage_dir):
-                logger.info(
-                    f"Dataset {self._dataset_name} already exists in {self._storage_dir}. "
-                    "Skipping download."
-                )
-                return
-
             logger.info(
-                f"Downloading dataset {self._dataset_name} to {self._storage_dir} from repository {self._dataset_info.name}."
+                f"Downloading dataset '{self._dataset_name}' to '{self._storage_dir}' from repository '{self._dataset_info.name}'."
             )
             self._hub.datasets.download_files(
                 dataset_repo_id=self._dataset_info.repo_id,

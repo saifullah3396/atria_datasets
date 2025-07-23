@@ -190,7 +190,6 @@ class ShardedDeltalakeStorageWriter(ABC):
     def _write_batch(self):
         logger.info(f"Writing batch of size {len(self.batch)} to storage.")
         mode = "overwrite" if self.first_batch else "append"
-        print("self.batch,self.batch")
         deltalake.write_deltalake(
             self.split_dir,
             pa.Table.from_pylist(
@@ -259,48 +258,59 @@ class ParallelStorageWriter(ShardedDeltalakeStorageWriter):
             ProducerWorker(input_queue, output_queue, serializer_kwargs)
             for _ in range(num_producers)
         ]
-        for p in producers:
-            p.start()
 
-        # Send items to the input queue
-        for item in tqdm.tqdm(
-            self.iterator, desc="Writing to Deltalake", total=self.total, unit="rows"
-        ):
-            input_queue.put(item)
+        try:
+            for p in producers:
+                p.start()
 
-            # Drain output queue while producers are working
-            while not output_queue.empty():
+            # Send items to the input queue
+            for item in tqdm.tqdm(
+                self.iterator,
+                desc="Writing to Deltalake",
+                total=self.total,
+                unit="rows",
+            ):
+                input_queue.put_nowait(item)
+
+                # Drain output queue while producers are working
+                while not output_queue.empty():
+                    result = output_queue.get()
+                    if result == "STOP":
+                        continue
+                    if isinstance(result, Exception):
+                        logger.error(f"Error in producer: {result}")
+                        raise result
+                    self._handle_batch_write(result)
+
+            # Send STOP signal to producers
+            for _ in producers:
+                input_queue.put("STOP")
+
+            # Count STOPs from output queue
+            stops_received = 0
+            while stops_received < num_producers:
                 result = output_queue.get()
-                if result == "STOP":
-                    continue
                 if isinstance(result, Exception):
                     logger.error(f"Error in producer: {result}")
                     raise result
-                self._handle_batch_write(result)
+                if result == "STOP":
+                    stops_received += 1
+                else:
+                    self._handle_batch_write(result)
 
-        # Send STOP signal to producers
-        for _ in producers:
-            input_queue.put("STOP")
-
-        # Count STOPs from output queue
-        stops_received = 0
-        while stops_received < num_producers:
-            result = output_queue.get()
-            if isinstance(result, Exception):
-                logger.error(f"Error in producer: {result}")
-                raise result
-            if result == "STOP":
-                stops_received += 1
-            else:
-                self._handle_batch_write(result)
-
-        # Write remaining batch if any
-        if self.batch:
-            self._write_batch()
-
-        # Ensure producers terminate
-        for p in producers:
-            p.join()
+            # Write remaining batch if any
+            if self.batch:
+                self._write_batch()
+        except Exception as e:
+            logger.error(f"Error during parallel writing: {e}")
+            for p in producers:
+                p.terminate()
+            raise e
+        finally:
+            for p in producers:
+                p.join(timeout=5)
+                if p.is_alive():
+                    logger.warning(f"Producer {p.pid} did not shut down cleanly.")
 
 
 class DeltalakeStorageManager:

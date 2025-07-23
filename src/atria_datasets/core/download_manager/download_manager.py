@@ -25,6 +25,7 @@ License: MIT
 import shutil
 from pathlib import Path
 
+import tqdm
 from atria_core.logger.logger import get_logger
 from atria_core.utilities.repr import RepresentationMixin
 
@@ -131,24 +132,38 @@ class DownloadManager(RepresentationMixin):
         for download_file_info in download_file_infos:
             if download_file_info.is_part_file:
                 merged_files.setdefault(download_file_info.extractable_path, []).append(
-                    download_file_info.download_path
+                    str(download_file_info.download_path)
                 )
 
         for merged_file, parts in merged_files.items():
-            parts.sort()
+            parts = sorted(parts, key=lambda path: int(path.split(".")[-1]))
+            expected_size = sum(Path(part).stat().st_size for part in parts)
 
             if merged_file.exists():
-                logger.debug(f"Skipping merge, already exists: {merged_file}")
-                continue
+                actual_size = merged_file.stat().st_size
+                if actual_size == expected_size:
+                    logger.info(
+                        f"Skipping merge, already exists and size matches: {merged_file}"
+                    )
+                    continue
+                else:
+                    logger.warning(
+                        f"Merged file {merged_file} exists but size mismatch "
+                        f"(expected: {expected_size}, actual: {actual_size}), re-merging."
+                    )
+                    merged_file.unlink(missing_ok=True)
 
-            logger.debug(f"Merging {len(parts)} parts into {merged_file}")
+            logger.info(f"Merging {len(parts)} parts into {merged_file}")
             try:
-                with open(merged_file, "wb") as merged:
-                    for part in parts:
+                with open(merged_file, "wb") as f:
+                    for part in tqdm.tqdm(parts, "Merging parts", unit="part"):
                         assert Path(part).exists(), f"Part file {part} not found"
                         with open(part, "rb") as part_file:
-                            merged.write(part_file.read())
-                logger.debug(f"Merged {len(parts)} files into {merged_file}")
+                            f.write(part_file.read())
+            except KeyboardInterrupt:
+                logger.warning("Merge interrupted by user, cleaning up.")
+                merged_file.unlink(missing_ok=True)
+                raise
             except Exception as e:
                 merged_file.unlink(missing_ok=True)
                 raise RuntimeError(
@@ -167,8 +182,7 @@ class DownloadManager(RepresentationMixin):
         """
         for download_file_info in download_file_infos:
             if (
-                download_file_info.is_part_file
-                or not download_file_info.is_compressed
+                not download_file_info.is_compressed
                 or download_file_info.extracted_path.exists()
                 or download_file_info.output_path.exists()
             ):
@@ -188,6 +202,11 @@ class DownloadManager(RepresentationMixin):
                     download_file_info.extractable_path, incomplete_extracted_path
                 )
                 incomplete_extracted_path.rename(download_file_info.extracted_path)
+            except KeyboardInterrupt:
+                logger.warning("Extraction interrupted by user, cleaning up.")
+                if incomplete_extracted_path.exists():
+                    shutil.rmtree(incomplete_extracted_path)
+                raise
             except Exception as e:
                 if incomplete_extracted_path.exists():
                     shutil.rmtree(incomplete_extracted_path)
@@ -205,6 +224,7 @@ class DownloadManager(RepresentationMixin):
             download_file_infos (List[DownloadFileInfo]): A list of `DownloadFileInfo` objects.
         """
         for download_file_info in download_file_infos:
+            logger.info("Finalizing file: %s", download_file_info.download_path)
             if download_file_info.output_path.exists():
                 continue
             if download_file_info.is_part_file:

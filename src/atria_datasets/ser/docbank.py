@@ -70,6 +70,7 @@ _DATA_URLS = [
     "https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_ori_img.zip.007",
     "https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_ori_img.zip.008",
     "https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_ori_img.zip.009",
+    "https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_ori_img.zip.010",
     "https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/DocBank_500K_txt.zip",
     "https://huggingface.co/datasets/liminghao1630/DocBank/resolve/main/MSCOCO_Format_Annotation.zip",
 ]

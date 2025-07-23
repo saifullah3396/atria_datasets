@@ -288,6 +288,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         build_kwargs = build_kwargs or {}
         dataset_name = name.split("/")[-1] if "/" in name else name
         config_name = config_name or cls.__default_config_name__
+        config_name = str(config_name)
 
         dataset: AtriaDataset[T_BaseDataInstance] = DATASET.load_from_registry(
             module_name=f"{name}/{config_name}",
@@ -295,9 +296,13 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             return_config=False,
             **build_kwargs,
         )
-
+        if data_dir is None:
+            data_dir = _DEFAULT_ATRIA_DATASETS_CACHE_DIR / dataset_name
+            logger.warning(
+                f"No data_dir provided. Using default cache directory:\n{data_dir}"
+            )
         dataset.build(
-            data_dir=data_dir or _DEFAULT_ATRIA_DATASETS_CACHE_DIR / dataset_name,
+            data_dir=data_dir,
             config_name=config_name,
             preprocess_transform=preprocess_transform,
             shard_storage_type=shard_storage_type,
@@ -355,6 +360,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         self._allowed_keys = allowed_keys
         self._dataset_load_mode = dataset_load_mode
         self._storage_dir = Path(data_dir) / "storage"
+        logger.info(f"Setting dataset storage directory: {self._storage_dir}")
 
         # Prepare splits based on caching preference
         if enable_cached_splits:
@@ -539,7 +545,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             List of (local_path, relative_path) tuples for all dataset files
         """
 
-        from atria_datasets.core.storage.deltalake_storage_manager_tar import (
+        from atria_datasets.core.storage.deltalake_storage_manager import (
             DeltalakeStorageManager,
         )
 
@@ -588,11 +594,11 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
 
         if data_dir.exists():
             assert data_dir.is_dir(), (
-                f"Data directory {data_dir} exists but is not a directory."
+                f"Data directory `{data_dir.absolute()}` exists but is not a directory."
             )
         else:
             logger.warning(
-                f"Data directory {data_dir} does not exist. Creating directory."
+                f"Data directory `{data_dir.absolute()}` does not exist. Creating it."
             )
             data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -648,7 +654,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         self, access_token: str | None = None, overwrite_existing: bool = False
     ) -> None:
         """Prepare cached splits using DeltaLake storage."""
-        from atria_datasets.core.storage.deltalake_storage_manager_tar import (
+        from atria_datasets.core.storage.deltalake_storage_manager import (
             DeltalakeStorageManager,
         )
 

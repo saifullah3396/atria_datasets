@@ -1,19 +1,21 @@
-import logging
+from __future__ import annotations
+
 from collections.abc import Sequence
-from typing import Any
-from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from typing import TYPE_CHECKING, Any
 
-import pandas as pd
-import pyarrow.dataset as ds
-from deltalake import DeltaTable
+from atria_core.logger.logger import get_logger
 
-from atria_datasets.core.dataset.atria_dataset import DatasetLoadingMode
-from atria_datasets.core.typing.common import T_BaseDataInstance
+if TYPE_CHECKING:
+    import pandas as pd
+    from atria_datasets.core.dataset.atria_dataset import DatasetLoadingMode
+    from atria_datasets.core.typing.common import T_BaseDataInstance
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def transform_file_path(value: str, storage_dir: str, config_name: str) -> str:
+    from urllib.parse import urlparse, urlunparse
+
     base_dir = f"{storage_dir}/{config_name}"
     parsed = urlparse(value)
     # Remove leading slash from path if exists, then join
@@ -48,6 +50,8 @@ def get_presigned_url_with_original_query(
     Returns:
         Presigned URL string with merged query params.
     """
+    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
     parsed = urlparse(original_url)
     original_query = parse_qs(parsed.query)
     key_path = parsed.path.lstrip("/")  # strip leading slash for S3 key
@@ -84,11 +88,11 @@ def get_presigned_url_with_original_query(
     )
 
 
-class DeltalakeReader(Sequence[T_BaseDataInstance]):
+class DeltalakeReader(Sequence["T_BaseDataInstance"]):
     def __init__(
         self,
         table_path: str,
-        data_model: type[T_BaseDataInstance],
+        data_model: type["T_BaseDataInstance"],
         allowed_keys: set[str] | None = None,
         **kwargs,
     ):
@@ -108,7 +112,9 @@ class DeltalakeReader(Sequence[T_BaseDataInstance]):
         config_name: str | None = None,
         storage_options: dict | None = None,
         presign_expiry: int = 3600,
-    ) -> "DeltalakeReader":
+    ) -> DeltalakeReader:
+        from atria_datasets.core.dataset.atria_dataset import DatasetLoadingMode
+
         kwargs = {
             "table_path": table_path,
             "data_model": data_model,
@@ -153,6 +159,8 @@ class DeltalakeReader(Sequence[T_BaseDataInstance]):
 
 class InMemoryDeltalakeReader(DeltalakeReader):
     def __init__(self, *args, **kwargs):
+        from deltalake import DeltaTable
+
         self.storage_dir = kwargs.pop("storage_dir", None)
         self.config_name = kwargs.pop("config_name", None)
         self.storage_options = kwargs.pop("storage_options", None)
@@ -194,6 +202,8 @@ class InMemoryDeltalakeReader(DeltalakeReader):
 
 class LocalDeltalakeReader(DeltalakeReader):
     def __init__(self, *args, **kwargs):
+        import pyarrow.dataset as ds
+        from deltalake import DeltaTable
         from pyarrow.fs import S3FileSystem
 
         self.storage_dir = kwargs.pop("storage_dir", None)
