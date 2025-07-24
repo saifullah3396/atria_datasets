@@ -91,23 +91,6 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         self._dataset_builder = None
         self._hf_split_generators = None
 
-    @classmethod
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        from hydra_zen import builds
-
-        # Get any builds_bases already defined on subclass
-        existing_bases = getattr(cls, "__builds_bases__", ())
-
-        # Always add builds of AtriaHuggingfaceDataset as a base
-        atria_base = builds(AtriaHuggingfaceDataset, populate_full_signature=True)
-
-        # Avoid duplicates, add atria_base if not already present
-        if atria_base not in existing_bases:
-            cls.__builds_bases__ = (atria_base,) + existing_bases
-        else:
-            cls.__builds_bases__ = existing_bases
-
     def prepare_downloads(self, data_dir: str, access_token: str | None = None) -> None:
         """
         Prepares the dataset by downloading and extracting files if data URLs are provided.

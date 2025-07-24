@@ -106,24 +106,6 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         self._dataset_info = self._initialize_dataset_info()
 
     @classmethod
-    def __init_subclass__(cls, **kwargs):
-        from hydra_zen import builds
-
-        # Get any builds_bases already defined on subclass
-        existing_bases = getattr(cls, "__builds_bases__", ())
-
-        # Always add builds of AtriaHuggingfaceDataset as a base
-        atria_base = builds(AtriaHubDataset, populate_full_signature=True)
-
-        # Avoid duplicates, add atria_base if not already present
-        if atria_base not in existing_bases:
-            cls.__builds_bases__ = (atria_base,) + existing_bases
-        else:
-            cls.__builds_bases__ = existing_bases
-
-        super().__init_subclass__(**kwargs)
-
-    @classmethod
     def load_from_hub(
         cls,
         name: str,

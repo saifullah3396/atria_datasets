@@ -224,20 +224,6 @@ class AtriaDataset(
         )
 
     def __init_subclass__(cls, **kwargs):
-        from hydra_zen import builds
-
-        # Get any builds_bases already defined on subclass
-        existing_bases = getattr(cls, "__builds_bases__", ())
-
-        # Always add builds of AtriaHuggingfaceDataset as a base
-        atria_base = builds(AtriaDataset, populate_full_signature=True)
-
-        # Avoid duplicates, add atria_base if not already present
-        if atria_base not in existing_bases:
-            cls.__builds_bases__ = (atria_base,) + existing_bases
-        else:
-            cls.__builds_bases__ = existing_bases
-
         super().__init_subclass__(**kwargs)
 
         if "__abstract__" in cls.__dict__ and cls.__dict__["__abstract__"]:
