@@ -118,7 +118,7 @@ class SerializerWorker:
         if self._wds_writer is not None:
             sample_row = sample.to_row()
             for key in sample_row:
-                if "file_path" in key and sample_row[key] is not None:
+                if "file_path" in key:
                     file_path_key = key
                     content_key = key.replace("file_path", "content")
                     assert content_key in sample_row, (
@@ -126,10 +126,12 @@ class SerializerWorker:
                         f"file path '{file_path_key}'."
                     )
                     content = sample_row[content_key]
+                    if content is None and sample_row[file_path_key] is None:
+                        # nothing to write, skip
+                        continue
                     assert content is not None, (
                         f"Content for key '{content_key}' is None. Expected a valid binary loaded content after load()."
                     )
-
                     tar_content = {"__key__": str(sample.key), content_key: content}
                     self._wds_writer.write(tar_content)
                     member = self._wds_writer.tarstream.tarstream.members[-1]
@@ -149,30 +151,6 @@ class SerializerWorker:
         if self._wds_writer is not None:
             self._wds_writer.close()
             self._wds_writer = None
-
-
-class ProducerWorker(mp.Process):
-    def __init__(self, input_queue, output_queue, serializer_kwargs, **kwargs):
-        super().__init__(**kwargs)
-        self.input_queue = input_queue
-        self.output_queue = output_queue
-        self.serializer_kwargs = serializer_kwargs
-
-    def run(self):
-        serializer = SerializerWorker(
-            process_id=self._identity[0], **self.serializer_kwargs
-        )
-        while True:
-            item = self.input_queue.get()
-            if item == "STOP":
-                break
-            try:
-                result = serializer(item)
-                self.output_queue.put(result)
-            except Exception as e:
-                self.output_queue.put(e)
-        serializer.close()
-        self.output_queue.put("STOP")
 
 
 class ShardedDeltalakeStorageWriter(ABC):
@@ -242,6 +220,30 @@ class SerialStorageWriter(ShardedDeltalakeStorageWriter):
         worker.close()
 
 
+class ProducerWorker(mp.Process):
+    def __init__(self, input_queue, output_queue, serializer_kwargs, **kwargs):
+        super().__init__(**kwargs)
+        self.input_queue = input_queue
+        self.output_queue = output_queue
+        self.serializer_kwargs = serializer_kwargs
+
+    def run(self):
+        serializer = SerializerWorker(
+            process_id=self._identity[0], **self.serializer_kwargs
+        )
+        while True:
+            item = self.input_queue.get()
+            if item == "STOP":
+                break
+            try:
+                result = serializer(item)
+                self.output_queue.put(result)
+            except Exception as e:
+                self.output_queue.put(e)
+        serializer.close()
+        self.output_queue.put("STOP")
+
+
 class ParallelStorageWriter(ShardedDeltalakeStorageWriter):
     def write(self):
         input_queue = mp.Queue(maxsize=100)
@@ -263,16 +265,12 @@ class ParallelStorageWriter(ShardedDeltalakeStorageWriter):
             for p in producers:
                 p.start()
 
-            # Send items to the input queue
             for item in tqdm.tqdm(
                 self.iterator,
                 desc="Writing to Deltalake",
                 total=self.total,
                 unit="rows",
             ):
-                input_queue.put_nowait(item)
-
-                # Drain output queue while producers are working
                 while not output_queue.empty():
                     result = output_queue.get()
                     if result == "STOP":
@@ -282,11 +280,11 @@ class ParallelStorageWriter(ShardedDeltalakeStorageWriter):
                         raise result
                     self._handle_batch_write(result)
 
-            # Send STOP signal to producers
+                input_queue.put(item)
+
             for _ in producers:
                 input_queue.put("STOP")
 
-            # Count STOPs from output queue
             stops_received = 0
             while stops_received < num_producers:
                 result = output_queue.get()
@@ -298,7 +296,6 @@ class ParallelStorageWriter(ShardedDeltalakeStorageWriter):
                 else:
                     self._handle_batch_write(result)
 
-            # Write remaining batch if any
             if self.batch:
                 self._write_batch()
         except Exception as e:

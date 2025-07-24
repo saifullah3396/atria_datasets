@@ -353,9 +353,10 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             **sharded_storage_kwargs: Additional arguments for sharded storage
         """
         self._data_dir = self._validate_data_dir(data_dir)
-        self._config_name = (
-            config_name or f"{self.__default_config_name__}-{self.config_hash}"
-        )
+        self._config_name = config_name or self.__default_config_name__
+        self._config_name = str(self._config_name)
+        if self._config_name == self.__default_config_name__:
+            self._config_name = f"{self._config_name}-{self.config_hash}"
         self._num_processes = num_processes
         self._allowed_keys = allowed_keys
         self._dataset_load_mode = dataset_load_mode
