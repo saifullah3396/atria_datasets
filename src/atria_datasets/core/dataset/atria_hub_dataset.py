@@ -35,7 +35,11 @@ from atria_core.types import (
 )
 from atria_core.types.datasets.metadata import DatasetMetadata
 
-from atria_datasets.core.dataset.atria_dataset import AtriaDataset, DatasetLoadingMode
+from atria_datasets.core.dataset.atria_dataset import (
+    AtriaDataset,
+    AtriaDatasetConfig,
+    DatasetLoadingMode,
+)
 from atria_datasets.core.storage.deltalake_reader import DeltalakeReader
 from atria_datasets.core.storage.utilities import FileStorageType
 from atria_datasets.core.typing.common import T_BaseDataInstance
@@ -47,6 +51,18 @@ if TYPE_CHECKING:
     from atria_hub.hub import AtriaHub  # type: ignore[import-not-found]
 
 logger = get_logger(__name__)
+
+
+class AtriaHubDatasetConfig(AtriaDatasetConfig):
+    """
+    Configuration class for Atria Hub datasets.
+
+    This class extends AtriaDatasetConfig to include specific parameters for datasets
+    hosted on the Atria Hub, such as the repository name and branch.
+    """
+
+    username: str
+    branch: str = "main"
 
 
 class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
@@ -78,10 +94,9 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
     """
 
     __abstract__ = True
+    __config_cls__ = AtriaHubDatasetConfig
 
-    def __init__(
-        self, username: str | None = None, branch: str | None = None, **kwargs
-    ) -> None:
+    def __init__(self, **kwargs) -> None:
         """
         Initialize the AtriaHubDataset.
 
@@ -96,10 +111,6 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             ValueError: If dataset configuration is invalid
         """
         super().__init__(**kwargs)
-
-        # Core dataset identifiers
-        self._username = username
-        self._branch = branch
 
         # Initialize hub connection and dataset info
         self._hub = self._initialize_hub()
@@ -156,7 +167,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             )
             ```
         """
-        username, dataset_name, branch = cls._validate_dataset_name(name)
+        username, dataset_name = cls._validate_dataset_name(name)
         config_name = config_name or cls.__default_config_name__
         dataset = cls(
             username=username,
@@ -200,7 +211,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
 
         parts = name.split("/")
         if len(parts) == 2:
-            return parts[0], parts[1], None
+            return parts[0], parts[1]
         else:
             raise ValueError(
                 f"Invalid dataset name format: {name}. "
@@ -267,19 +278,19 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             Dataset as DatasetInfo,  # type: ignore[import-not-found]
         )
 
-        if self._username is None:
-            self._username = self._hub.auth.username
+        if self.config.username is None:
+            self.config.username = self._hub.auth.username
         self._dataset_info: DatasetInfo = self._hub.datasets.get_by_name(
-            username=self._username, name=self._dataset_name
+            username=self.config.username, name=self.config.dataset_name
         )
-        self._branch = self._branch or self._dataset_info.default_branch
-        self._repo_path = f"lakefs://{self._dataset_info.repo_id}/{self._branch}"
+        self.config.branch = self.config.branch or self._dataset_info.default_branch
+        self._repo_path = f"lakefs://{self._dataset_info.repo_id}/{self.config.branch}"
         available_configs = self._hub.datasets.get_available_configs(
-            self._dataset_info.repo_id, branch=self._branch
+            self._dataset_info.repo_id, branch=self.config.branch
         )
-        assert self._config_name in available_configs, (
-            f"Configuration '{self._config_name}' not found in dataset '{self._username}/{self._dataset_info.name}' "
-            f"on branch '{self._branch}'. Available configurations: {available_configs}"
+        assert self.config.config_name in available_configs, (
+            f"Configuration '{self.config.config_name}' not found in dataset '{self.config.username}/{self._dataset_info.name}' "
+            f"on branch '{self.config.branch}'. Available configurations: {available_configs}"
         )
         return self._dataset_info
 
@@ -295,7 +306,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         Returns:
             Path: Path to the split directory
         """
-        return Path(storage_dir) / f"{self._config_name}/delta/{split.value}"
+        return Path(storage_dir) / f"{self.config.config_name}/delta/{split.value}"
 
     def is_dataset_downloaded(self, storage_dir: str) -> bool:
         """
@@ -304,7 +315,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         Returns:
             bool: True if dataset exists locally, False otherwise
         """
-        return (Path(storage_dir) / f"{self._config_name}/delta/").exists()
+        return (Path(storage_dir) / f"{self.config.config_name}/delta/").exists()
 
     def split_exists(self, storage_dir: str, split: DatasetSplitType) -> bool:
         """
@@ -339,21 +350,21 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             if self.is_dataset_downloaded(storage_dir=self._storage_dir):
                 if self._overwrite_existing_cached:
                     logger.warning(
-                        f"Overwriting existing dataset '{self._dataset_name}' in '{self._storage_dir}'."
+                        f"Overwriting existing dataset '{self.config.dataset_name}' in '{self._storage_dir}'."
                     )
                 else:
                     logger.info(
-                        f"Dataset '{self._dataset_name}' already exists in '{self._storage_dir}'. Skipping download."
+                        f"Dataset '{self.config.dataset_name}' already exists in '{self._storage_dir}'. Skipping download."
                     )
                     self._downloads_prepared = True
                     return
             logger.info(
-                f"Downloading dataset '{self._dataset_name}' to '{self._storage_dir}' from repository '{self._dataset_info.name}'."
+                f"Downloading dataset '{self.config.dataset_name}' to '{self._storage_dir}' from repository '{self._dataset_info.name}'."
             )
             self._hub.datasets.download_files(
                 dataset_repo_id=self._dataset_info.repo_id,
-                branch=self._branch,
-                config_dir=self._config_name,
+                branch=self.config.branch,
+                config_dir=self.config.config_name,
                 destination_path=str(self._storage_dir),
             )
             self._downloads_prepared = True
@@ -395,7 +406,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         """
 
         metadata = self._hub.datasets.get_metadata(
-            dataset_repo_id=self._dataset_info.repo_id, branch=self._branch
+            dataset_repo_id=self._dataset_info.repo_id, branch=self.config.branch
         )
         return DatasetMetadata(**metadata)
 
@@ -410,7 +421,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             list[SplitConfig]: List of split configurations
         """
         return self._hub.datasets.get_splits(
-            self._dataset_info.repo_id, self._branch, self._config_name
+            self._dataset_info.repo_id, self.config.branch, self.config.config_name
         )
 
     def _split_iterator(
@@ -444,8 +455,8 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             storage_options = self._hub.get_storage_options()
             path = self._hub.datasets.dataset_table_path(
                 dataset_repo_id=self._dataset_info.repo_id,
-                branch=self._branch,
-                config_name=self._config_name,
+                branch=self.config.branch,
+                config_name=self.config.config_name,
                 split=split.value,
             )
             logger.info(f"Streaming dataset split {split.value} from {path}")
@@ -463,7 +474,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
                     self.split_dir(storage_dir=self._storage_dir, split=split)
                 ),
                 storage_dir=self._storage_dir,
-                config_name=self._config_name,
+                config_name=self.config.config_name,
                 data_model=self.data_model,
                 allowed_keys=self._allowed_keys,
             )
