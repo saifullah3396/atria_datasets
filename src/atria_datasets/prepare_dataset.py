@@ -24,6 +24,11 @@ def main(
         access_token=access_token,
         num_processes=num_processes,
         dataset_load_mode=DatasetLoadingMode.in_memory,
+        build_kwargs={
+            "max_train_samples": 10,
+            "max_validation_samples": 10,
+            "max_test_samples": 10,
+        },
     )
     logger.info(f"Loaded dataset:\n{dataset}")
     for sample in dataset.train:

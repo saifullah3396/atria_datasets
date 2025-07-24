@@ -10,7 +10,10 @@ from atria_core.types import (
 )
 
 from atria_datasets import DATASET
-from atria_datasets.core.dataset.atria_dataset import AtriaImageDataset
+from atria_datasets.core.dataset.atria_dataset import (
+    AtriaDatasetConfig,
+    AtriaImageDataset,
+)
 
 _CLASSES = [
     "airplane",
@@ -26,16 +29,18 @@ _CLASSES = [
 ]
 
 
-@DATASET.register("cifar10")
+@DATASET.register(
+    "cifar10",
+    configs=[
+        AtriaDatasetConfig(
+            config_name="1k",
+            max_train_samples=1000,
+            max_test_samples=1000,
+            max_validation_samples=1000,
+        )
+    ],
+)
 class Cifar10(AtriaImageDataset):
-    _REGISTRY_CONFIGS = {
-        "1k": {
-            "max_train_samples": 1000,
-            "max_test_samples": 1000,
-            "max_validation_samples": 1000,
-        }
-    }
-
     def _custom_download(self, data_dir: str, access_token: str | None = None) -> None:
         from torchvision.datasets import CIFAR10
 

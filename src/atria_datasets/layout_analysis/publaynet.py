@@ -14,16 +14,22 @@ from atria_core.types import (
 )
 
 from atria_datasets import DATASET, AtriaHuggingfaceDocumentDataset
+from atria_datasets.core.dataset.atria_huggingface_dataset import (
+    AtriaHuggingfaceDatasetConfig,
+)
 
 _CLASSES = ["text", "title", "list", "table", "figure"]
 
 
-@DATASET.register("publaynet")
+@DATASET.register(
+    "publaynet",
+    configs=[
+        AtriaHuggingfaceDatasetConfig(
+            hf_repo="jordanparker6/publaynet", hf_config_name="default"
+        )
+    ],
+)
 class PubLayNet(AtriaHuggingfaceDocumentDataset):
-    _REGISTRY_CONFIGS = {
-        "default": {"hf_repo": "jordanparker6/publaynet", "hf_config_name": "default"}
-    }
-
     def _metadata(self) -> DatasetMetadata:
         metadata = super()._metadata()
         metadata.dataset_labels = DatasetLabels(layout=_CLASSES)

@@ -2,31 +2,31 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 declare -a small_datasets=(
-    "cifar10/1k" # tested
-    "huggingface_cifar10/plain_text_1k" # tested
-    "tobacco3482/image_with_ocr" # tested
-    "rvlcdip/image_with_ocr_1k" # tested
-    "mnist/mnist_1k" # tested
-    # "cord/default" # tested
-    # "funsd/default" # tested
-    # "sroie/default" # tested
-    # "wild_receipts/default" # tested
-    # "docile/kile" # tested
+    "cifar10/1k" # tested done
+    "huggingface_cifar10/plain_text_1k" # tested done
+    "mnist/mnist_1k" # tested done
+    "tobacco3482/image_with_ocr" # tested done
+    "rvlcdip/image_with_ocr_1k" # tested done
+    "cord/default" # tested done
+    "funsd/default" # tested done
+    "sroie/default" # tested done
+    "wild_receipts/default" # tested done
+    "docile/kile" # tested done
+    "fintabnet/1k"  # tested done
+    "icdar2019/trackA_modern" # tested done
+    "icdar2013/default" # tested done
+    "docvqa/default" 
     # "docbank/1k"  # too big, failing downloads
-    # "fintabnet/1k" 
-    # "icdar2019/trackA_modern"
-    # "icdar2013/default"
-    # "docvqa/default" 
 )
 
 
 declare -a big_datasets=(
-    "rvlcdip/image_with_ocr"
+    "rvlcdip/image_with_ocr" 
     "docbank/default"  
-    "doclaynet/2022.08" # too big, failing downloads
-    "publaynet/default" # too big, failing downloads
-    "pubtables1m/detection_1k" # too big, failing downloads
-    "pubtables1m/structure_1k" # too big, failing downloads
+    "doclaynet/2022.08" # too big, failing downloads, untested
+    "publaynet/default" # too big, failing downloads, untested
+    "pubtables1m/detection_1k" # too big, failing downloads, untested
+    "pubtables1m/structure_1k" # too big, failing downloads, untested
 )
 
 

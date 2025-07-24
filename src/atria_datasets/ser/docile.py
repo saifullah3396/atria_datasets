@@ -19,7 +19,10 @@ from atria_core.types import (
 from docile.dataset import KILE_FIELDTYPES, LIR_FIELDTYPES, Dataset
 
 from atria_datasets import DATASET
-from atria_datasets.core.dataset.atria_dataset import AtriaDocumentDataset
+from atria_datasets.core.dataset.atria_dataset import (
+    AtriaDatasetConfig,
+    AtriaDocumentDataset,
+)
 
 from .docile_utils.preprocessor import (
     generate_unique_entities,
@@ -75,32 +78,79 @@ def filter_empty_words(row):
     return row
 
 
-@DATASET.register("docile")
-class Docile(AtriaDocumentDataset):
-    __requires_access_token__ = True
-    _REGISTRY_CONFIGS = {
-        "kile": {"type": "kile"},
-        "lir": {"type": "lir"},
-        "kile_synthetic": {"synthetic": True, "type": "kile"},
-        "lir_synthetic": {"synthetic": True, "type": "lir"},
-    }
+class DocileConfig(AtriaDatasetConfig):
+    synthetic: bool = False
+    overlap_threshold: float = 0.5
+    image_shape: tuple = (1024, 1024)
+    type: str = "kile"  # "kile" or "lir"
 
-    def __init__(
-        self,
-        synthetic: bool = False,
-        overlap_threshold: float = 0.5,
-        image_shape: tuple = (1024, 1024),
-        type: str = "kile",
-        **kwargs,
-    ):
-        self._synthetic = synthetic
-        self._overlap_threshold = overlap_threshold
-        self._image_shape = image_shape
-        self._type = type
-        super().__init__(**kwargs)
+
+class SplitIterator:
+    def __init__(self, dataset, label_names, config: DocileConfig):
+        self.dataset = dataset
+        self.label_names = label_names
+        self.config = config
+
+    def _remap_labels_to_task_labels(self, labels):
+        import numpy as np
+
+        all_labels = np.array(_ALL_LABELS)
+        if self.config.type == "kile":
+            label_map = _KILE_LABELS
+        elif self.config.type == "lir":
+            label_map = _LIR_LABELS
+
+        labels_to_idx = dict(zip(label_map, range(len(label_map)), strict=True))
+        remapped_labels = []
+        for label in labels:
+            # each label is a boolean map to multiple unique entities in _ALL_LABELS
+            # here we only take those labels that are present in the label_map (KILE OR LIR or other)
+            sample_label = [x for x in all_labels[label] if x in label_map]
+            if len(sample_label) > 0:  # now we take the label index from the label_map
+                remapped_labels.append(labels_to_idx[sample_label[0]])
+            else:
+                remapped_labels.append(labels_to_idx[label_map[0]])
+        return remapped_labels
+
+    def __iter__(self):
+        for row in self.dataset:
+            row["ner_tags"] = self._remap_labels_to_task_labels(row["ner_tags"])
+            row["tokens"] = list(row["tokens"])
+            yield DocumentInstance(
+                sample_id=str(row["id"]),
+                image=Image(
+                    content=PIL.Image.open(io.BytesIO(base64.b64decode(row["img"])))
+                ),
+                gt=GroundTruth(
+                    ser=SERGT(
+                        words=row["tokens"],
+                        word_bboxes=BoundingBoxList(value=row["bboxes"]),
+                        word_labels=LabelList.from_list(
+                            [
+                                Label(value=label, name=self.label_names[label])
+                                for label in row["ner_tags"]
+                            ]
+                        ),
+                    )
+                ),
+            )
+
+
+@DATASET.register(
+    "docile",
+    configs=[
+        DocileConfig(synthetic=False, type="kile"),
+        DocileConfig(synthetic=False, type="lir"),
+        DocileConfig(synthetic=True, type="kile"),
+        DocileConfig(synthetic=True, type="lir"),
+    ],
+)
+class Docile(AtriaDocumentDataset):
+    __config_cls__ = DocileConfig
+    __requires_access_token__ = True
 
     def _download_urls(self) -> list[str]:
-        if self._synthetic:
+        if self.config.synthetic:
             return _SYNTHETIC_DATA_URLS
         return _DATA_URLS
 
@@ -108,9 +158,9 @@ class Docile(AtriaDocumentDataset):
         return [DatasetSplitType.train, DatasetSplitType.validation]
 
     def _metadata(self) -> DatasetMetadata:
-        if self._type == "kile":
+        if self.config.type == "kile":
             labels = _KILE_LABELS
-        elif self._type == "lir":
+        elif self.config.type == "lir":
             labels = _KILE_LABELS
         return DatasetMetadata(
             citation=_CITATION,
@@ -121,9 +171,9 @@ class Docile(AtriaDocumentDataset):
         )
 
     def label_names(self):
-        if self._type == "kile":
+        if self.config.type == "kile":
             return _KILE_LABELS
-        elif self._type == "lir":
+        elif self.config.type == "lir":
             return _LIR_LABELS
         else:
             return _ALL_LABELS
@@ -136,99 +186,24 @@ class Docile(AtriaDocumentDataset):
             docile_dataset = Dataset(
                 split_name, data_dir / split_dir, load_annotations=False, load_ocr=False
             )
-            preprocessed_name = f"{docile_dataset.split_name}_multilabel_preprocessed_withImgs_{self._image_shape[0]}x{self._image_shape[1]}.json"
+            preprocessed_name = f"{docile_dataset.split_name}_multilabel_preprocessed_withImgs_{self.config.image_shape[0]}x{self.config.image_shape[1]}.json"
             if not (data_dir / split_dir / split_dir / preprocessed_name).exists():
                 prepare_docile_dataset(
                     docile_dataset,
-                    self._overlap_threshold,
+                    self.config.overlap_threshold,
                     data_dir / split_dir,
-                    image_shape=self._image_shape,
+                    image_shape=self.config.image_shape,
                 )
             label_names = self.label_names()
             dataset = load_docile_dataset(
-                docile_dataset, data_dir / split_dir, image_shape=self._image_shape
+                docile_dataset,
+                data_dir / split_dir,
+                image_shape=self.config.image_shape,
             )
         return dataset, label_names
 
     def _split_iterator(self, split: DatasetSplitType, data_dir: str):
-        class SplitIterator:
-            def __init__(self, dataset, label_names, type: str):
-                self._dataset = dataset
-                self._label_names = label_names
-                self._split = split
-                self._type = type
-
-            def _remap_labels_to_task_labels(self, labels):
-                import numpy as np
-
-                all_labels = np.array(_ALL_LABELS)
-                if self._type == "kile":
-                    label_map = _KILE_LABELS
-                elif self._type == "lir":
-                    label_map = _LIR_LABELS
-
-                labels_to_idx = dict(zip(label_map, range(len(label_map)), strict=True))
-                remapped_labels = []
-                for label in labels:
-                    # each label is a boolean map to multiple unique entities in _ALL_LABELS
-                    # here we only take those labels that are present in the label_map (KILE OR LIR or other)
-                    sample_label = [x for x in all_labels[label] if x in label_map]
-                    if (
-                        len(sample_label) > 0
-                    ):  # now we take the label index from the label_map
-                        remapped_labels.append(labels_to_idx[sample_label[0]])
-                    else:
-                        remapped_labels.append(labels_to_idx[label_map[0]])
-                return remapped_labels
-
-            def __iter__(self):
-                for row in self._dataset:
-                    row["ner_tags"] = self._remap_labels_to_task_labels(row["ner_tags"])
-                    row["tokens"] = list(row["tokens"])
-                    yield DocumentInstance(
-                        sample_id=str(row["id"]),
-                        image=Image(
-                            content=PIL.Image.open(
-                                io.BytesIO(base64.b64decode(row["img"]))
-                            )
-                        ),
-                        gt=GroundTruth(
-                            ser=SERGT(
-                                words=row["tokens"],
-                                word_bboxes=BoundingBoxList(value=row["bboxes"]),
-                                word_labels=LabelList.from_list(
-                                    [
-                                        Label(
-                                            value=label, name=self._label_names[label]
-                                        )
-                                        for label in row["ner_tags"]
-                                    ]
-                                ),
-                            )
-                        ),
-                    )
-
         dataset, label_names = self._prepare_dataset(split, data_dir)
-        return SplitIterator(dataset=dataset, label_names=label_names, type=self._type)
-
-    # def _input_transform(self, row) -> DocumentInstance:
-    #     row["ner_tags"] = self._remap_labels_to_task_labels(row["ner_tags"])
-    #     row["tokens"] = list(row["tokens"])
-    #     return DocumentInstance(
-    #         sample_id=str(row["id"]),
-    #         image=Image(
-    #             content=PIL.Image.open(io.BytesIO(base64.b64decode(row["img"])))
-    #         ),
-    #         gt=GroundTruth(
-    #             ser=SERGT(
-    #                 words=row["tokens"],
-    #                 word_bboxes=BoundingBoxList(value=row["bboxes"]),
-    #                 word_labels=LabelList.from_list(
-    #                     [
-    #                         Label(value=label, name=self._label_names[label])
-    #                         for label in row["ner_tags"]
-    #                     ]
-    #                 ),
-    #             )
-    #         ),
-    #     )
+        return SplitIterator(
+            dataset=dataset, label_names=label_names, config=self.config
+        )

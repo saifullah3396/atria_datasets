@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any, Generic
 from atria_core.logger import get_logger
 from atria_core.types import DocumentInstance, ImageInstance
 
-from atria_datasets.core.dataset.atria_dataset import AtriaDataset
+from atria_datasets.core.dataset.atria_dataset import AtriaDataset, AtriaDatasetConfig
 from atria_datasets.core.typing.common import T_BaseDataInstance
 
 if TYPE_CHECKING:
@@ -49,6 +49,11 @@ if TYPE_CHECKING:
 
 
 logger = get_logger(__name__)
+
+
+class AtriaHuggingfaceDatasetConfig(AtriaDatasetConfig):
+    hf_repo: str
+    hf_config_name: str
 
 
 class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
@@ -74,19 +79,17 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
     """
 
     __abstract__ = True
+    __config_cls__ = AtriaHuggingfaceDatasetConfig
 
-    def __init__(self, hf_repo: str = None, hf_config_name: str = None, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self._hf_repo = hf_repo
-        self._hf_config_name = hf_config_name
+        assert isinstance(self.config, AtriaHuggingfaceDatasetConfig), (
+            f"Expected config for {self.__class__.__name__} to be of type "
+            f"AtriaHuggingfaceDatasetConfig, got {type(self.config)} instead."
+        )
         self._dataset_builder = None
         self._hf_split_generators = None
-
-        assert hf_repo is not None, "Hugging Face repository must be specified."
-        assert hf_config_name is not None, (
-            "Hugging Face configuration name must be specified"
-        )
 
     @classmethod
     def __init_subclass__(cls, **kwargs):
@@ -174,7 +177,7 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
 
         storage_manager = DeltalakeStorageManager(
             storage_dir=str(self._storage_dir),
-            config_name=self._config_name,
+            config_name=self.config.config_name,
             num_processes=self._num_processes,
         )
 
@@ -234,7 +237,7 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
             from datasets import load_dataset_builder
 
             self._dataset_builder = load_dataset_builder(
-                self._hf_repo, name=self._hf_config_name, cache_dir=data_dir
+                self.config.hf_repo, name=self.config.hf_config_name, cache_dir=data_dir
             )
         return self._dataset_builder
 
@@ -245,6 +248,8 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         Returns:
             DatasetMetadata: The metadata for the datasets.
         """
+        from atria_core.types import DatasetMetadata
+
         return DatasetMetadata.from_huggingface_info(self._dataset_builder.info)
 
     def _prepare_download_manager(
@@ -262,7 +267,7 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
 
             # If it is a packaged module, use the Hugging Face download manager.
             return datasets.DownloadManager(
-                dataset_name=self._hf_config_name,
+                dataset_name=self.config.hf_config_name,
                 data_dir=data_dir,
                 download_config=datasets.DownloadConfig(
                     cache_dir=download_dir,

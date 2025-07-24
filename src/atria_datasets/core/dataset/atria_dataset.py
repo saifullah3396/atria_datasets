@@ -29,6 +29,7 @@ import hashlib
 import json
 from abc import abstractmethod
 from collections.abc import Callable, Generator, Sequence
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Self
 
@@ -40,8 +41,8 @@ from atria_core.types import (
     DocumentInstance,
     ImageInstance,
 )
-from atria_core.utilities.auto_config import AutoConfig
 from atria_core.utilities.repr import RepresentationMixin
+from pydantic import BaseModel
 
 from atria_datasets.core.constants import _DEFAULT_DOWNLOAD_PATH
 from atria_datasets.core.dataset.split_iterator import SplitIterator
@@ -76,7 +77,85 @@ class DatasetLoadingMode(str, enum.Enum):
     online_streaming = "online_streaming"
 
 
-class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig):
+class AtriaDatasetConfig(BaseModel):
+    dataset_name: str | None = None
+    config_name: str = "default"
+    max_train_samples: int | None = None
+    max_validation_samples: int | None = None
+    max_test_samples: int | None = None
+
+
+class DatasetConfigMixin:
+    __config_cls__: type[AtriaDatasetConfig]
+
+    def __init__(self, **kwargs):
+        config_cls = getattr(self.__class__, "__config_cls__", None)
+        assert issubclass(config_cls, AtriaDatasetConfig), (
+            f"{self.__class__.__name__} must define a __config_cls__ attribute "
+            "that is a subclass of AtriaDatasetConfig."
+        )
+        self._config = config_cls(**kwargs)
+        if self._config.dataset_name is None:
+            self._config.dataset_name = self.__class__.__name__.lower()
+        super().__init__()
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        # Validate presence of Config at class definition time
+        if not hasattr(cls, "__config_cls__"):
+            raise TypeError(
+                f"{cls.__name__} must define a nested `__config_cls__` class."
+            )
+
+        if not issubclass(cls.__config_cls__, AtriaDatasetConfig):
+            raise TypeError(
+                f"{cls.__name__}.Config must subclass pydantic.AtriaDatasetConfig. Got {cls.__config_cls__} instead."
+            )
+
+    def prepare_build_config(self):
+        from hydra_zen import builds
+        from omegaconf import OmegaConf
+
+        if self.__config_cls__ is None:
+            raise TypeError(
+                f"{self.__class__.__name__} must define a __config_cls__ attribute."
+            )
+        return OmegaConf.to_container(
+            OmegaConf.create(
+                builds(
+                    self.__class__,
+                    populate_full_signature=True,
+                    **self._config.__dict__,
+                )
+            )
+        )
+
+    @cached_property
+    def config(self) -> AtriaDatasetConfig:
+        return self._config
+
+    @cached_property
+    def build_config(self) -> AtriaDatasetConfig:
+        return self.prepare_build_config()
+
+    @cached_property
+    def config_hash(self) -> str:
+        """
+        Hash of the dataset configuration for versioning.
+
+        Returns:
+            8-character hash string based on configuration content
+        """
+
+        return hashlib.sha256(
+            json.dumps(self.build_config, sort_keys=True).encode()
+        ).hexdigest()[:8]
+
+
+class AtriaDataset(
+    Generic[T_BaseDataInstance], RepresentationMixin, DatasetConfigMixin
+):
     """
     Generic base class for datasets in the Atria application.
 
@@ -126,47 +205,22 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
     __default_config_path__ = "conf/dataset/{config_name}.yaml"
     __default_metadata_path__ = "metadata.yaml"
     __repr_fields__ = ["data_model", "data_dir", "train", "validation", "test"]
+    __config_cls__ = AtriaDatasetConfig
 
-    def __init__(
-        self,
-        dataset_name: str | None = None,  # dataset name, defaults to class name
-        config_name: str = __default_config_name__,
-        max_train_samples: int | None = None,  # these get passed to the config
-        max_validation_samples: int | None = None,  # these get passed to the config
-        max_test_samples: int | None = None,  # these get passed to the config
-    ):
-        """
-        Initialize the AtriaDataset.
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
-        Args:
-            dataset_name: Name of the dataset. Defaults to class name if not provided.
-            config_name: Configuration variant name. Defaults to "main".
-            max_train_samples: Maximum number of training samples to load
-            max_validation_samples: Maximum number of validation samples to load
-            max_test_samples: Maximum number of test samples to load
+        # config is now available at self._config
+        if self.config.config_name == self.__default_config_name__:
+            self.config.config_name = f"{self.config.config_name}-{self.config_hash}"
 
-        Note:
-            The dataset will be stored in a directory structure based on the dataset
-            name and configuration hash to ensure proper versioning and isolation.
-        """
-        # Configuration parameters
-        self._dataset_name = dataset_name or self.__class__.__name__
-        self._config_name = str(config_name)
-        self._max_train_samples = max_train_samples
-        self._max_validation_samples = max_validation_samples
-        self._max_test_samples = max_test_samples
-
-        # Default values
-        if self._config_name == self.__default_config_name__:
-            self._config_name = f"{self._config_name}-{self.config_hash}"
-
-        # Internal state management
         self._downloaded_files: dict[str, Path] = {}
         self._split_iterators: dict[DatasetSplitType, SplitIterator] = {}
         self._downloads_prepared: bool = False
         self._sharded_splits_prepared: bool = False
+
         self._config_path = self.__default_config_path__.format(
-            config_name=self._config_name
+            config_name=self.config.config_name
         )
 
     def __init_subclass__(cls, **kwargs):
@@ -218,18 +272,6 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
     def data_model(self) -> type[T_BaseDataInstance]:
         """The data model class used for type validation and instantiation."""
         return self.__data_model__
-
-    @property
-    def config_hash(self) -> str:
-        """
-        Hash of the dataset configuration for versioning.
-
-        Returns:
-            8-character hash string based on configuration content
-        """
-        config_dict = self.config
-        config_str = json.dumps(config_dict, sort_keys=True)
-        return hashlib.sha256(config_str.encode()).hexdigest()[:8]
 
     # ==================== Split Properties ====================
 
@@ -368,7 +410,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         from atria_core.constants import _DEFAULT_ATRIA_DATASETS_CACHE_DIR
 
         if data_dir is None:
-            data_dir = _DEFAULT_ATRIA_DATASETS_CACHE_DIR / self._dataset_name
+            data_dir = _DEFAULT_ATRIA_DATASETS_CACHE_DIR / self.config.dataset_name
             logger.warning(
                 f"No data_dir provided. Using default cache directory:\n{data_dir}"
             )
@@ -427,7 +469,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             from atriax_client.models.data_instance_type import DataInstanceType
 
             if name is None:
-                name = self._dataset_name.replace("_", "-")
+                name = self.config.dataset_name.replace("_", "-")
 
             logger.info(
                 f"Uploading dataset {self.__class__.__name__} to hub with name {name} and config {branch}."
@@ -456,13 +498,13 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             hub.datasets.upload_files(
                 dataset=dataset,
                 branch=branch,
-                config_dir=self._config_name,
+                config_dir=self.config.config_name,
                 dataset_files=self.prepare_dataset_files_from_dir(),
                 overwrite_existing=overwrite_existing,
             )
             logger.info(
                 f"Dataset {name} uploaded successfully to branch {branch}. "
-                f"You can load it with name '{hub.auth.username}/{name}' and config_name '{self._config_name}'."
+                f"You can load it with name '{hub.auth.username}/{name}' and config_name '{self.config.config_name}'."
             )
         except ImportError:
             raise ImportError(
@@ -484,9 +526,9 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
             Maximum number of samples, or None if no limit is set
         """
         limits = {
-            DatasetSplitType.train: self._max_train_samples,
-            DatasetSplitType.validation: self._max_validation_samples,
-            DatasetSplitType.test: self._max_test_samples,
+            DatasetSplitType.train: self.config.max_train_samples,
+            DatasetSplitType.validation: self.config.max_validation_samples,
+            DatasetSplitType.test: self.config.max_test_samples,
         }
         return limits.get(split)
 
@@ -542,15 +584,14 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
 
         def write_yaml_file(file_path: Path, data: dict) -> None:
             """Write data to YAML file, creating directories as needed."""
-            if not file_path.exists():
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(file_path, "w") as f:
-                    yaml.dump(data, f, default_flow_style=False)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(file_path, "w") as f:
+                yaml.dump(data, f, default_flow_style=False)
 
         # Save configuration
         config_file_path = Path(storage_dir) / self._config_path
         logger.info("Saving dataset configuration to %s", config_file_path)
-        write_yaml_file(config_file_path, self.config)
+        write_yaml_file(config_file_path, self.build_config)
 
         metadata_file_path = Path(storage_dir) / self.__default_metadata_path__
         logger.info("Saving dataset metadata to %s", metadata_file_path)
@@ -572,7 +613,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
         )
 
         deltalake_storage_manager = DeltalakeStorageManager(
-            storage_dir=self._storage_dir, config_name=self._config_name
+            storage_dir=self._storage_dir, config_name=self.config.config_name
         )
 
         # Collect split files
@@ -683,7 +724,7 @@ class AtriaDataset(Generic[T_BaseDataInstance], RepresentationMixin, AutoConfig)
 
         storage_manager = DeltalakeStorageManager(
             storage_dir=self._storage_dir,
-            config_name=self._config_name,
+            config_name=self.config.config_name,
             num_processes=self._num_processes,
         )
 

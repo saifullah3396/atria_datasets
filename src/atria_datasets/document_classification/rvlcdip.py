@@ -17,6 +17,7 @@ from atria_core.types import (
 )
 
 from atria_datasets import DATASET, AtriaDocumentDataset
+from atria_datasets.core.dataset.atria_dataset import AtriaDatasetConfig
 
 _CITATION = """\
 @inproceedings{harley2015icdar,
@@ -79,36 +80,63 @@ _CLASSES = [
 ]
 
 
-@DATASET.register("rvlcdip")
+class RvlCdipConfig(AtriaDatasetConfig):
+    load_ocr: bool = False
+    type: str = "default"
+
+
+class SplitIterator(Iterable[tuple[Path, Path, int]]):
+    def __init__(self, split: DatasetSplitType, data_dir: str, config: RvlCdipConfig):
+        if split == DatasetSplitType.train:
+            split_file_paths = Path(data_dir) / f"labels/{config.type}/train.txt"
+        elif split == DatasetSplitType.test:
+            split_file_paths = Path(data_dir) / f"labels/{config.type}/test.txt"
+        elif split == DatasetSplitType.validation:
+            split_file_paths = Path(data_dir) / f"labels/{config.type}/val.txt"
+        with open(split_file_paths) as f:
+            self.split_file_paths = f.read().splitlines()
+        self.image_data_dir = data_dir / _IMAGE_DATA_NAME / "images"
+        self.ocr_data_dir = data_dir / _OCR_DATA_NAME / "images"
+
+    def __iter__(self) -> Generator[tuple[Path, Path, int], None, None]:
+        for image_file_path_with_label in self.split_file_paths:
+            image_file_path, label = image_file_path_with_label.split(" ")
+            ocr_file_path = Path(self.ocr_data_dir) / image_file_path.replace(
+                ".tif", ".hocr.lstm"
+            )
+            image_file_path = Path(self.image_data_dir) / image_file_path
+            yield image_file_path, ocr_file_path, label
+
+    def __len__(self) -> int:
+        return len(self.split_file_paths)
+
+
+@DATASET.register(
+    "rvlcdip",
+    configs=[
+        RvlCdipConfig(config_name="image", load_ocr=False),
+        RvlCdipConfig(config_name="image_with_ocr", load_ocr=True),
+        RvlCdipConfig(
+            config_name="image_with_ocr_1k",
+            load_ocr=True,
+            max_train_samples=1000,
+            max_validation_samples=1000,
+            max_test_samples=1000,
+        ),
+    ],
+)
 class RvlCdip(AtriaDocumentDataset):
     """Ryerson Vision Lab Complex Document Information Processing dataset."""
 
-    _REGISTRY_CONFIGS = {
-        "image": {"load_ocr": False},
-        "image_with_ocr": {"load_ocr": True},
-        "image_with_ocr_1k": {
-            "load_ocr": True,
-            "max_train_samples": 1000,
-            "max_validation_samples": 1000,
-            "max_test_samples": 1000,
-        },
-    }
-
-    def __init__(
-        self,
-        type: str = "default",  # type of dataset to load, e.g., "default" or "tobacco3482_included"
-        load_ocr: bool = False,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        self.type = type
-        self.load_ocr = load_ocr
+    __config_cls__ = RvlCdipConfig
 
     def _download_urls(self) -> list[str]:
-        if self.type in _METADATA_URLS:
-            return list(_METADATA_URLS[self.type].values()) + list(_URLS.values())
+        if self.config.type in _METADATA_URLS:
+            return list(_METADATA_URLS[self.config.type].values()) + list(
+                _URLS.values()
+            )
         else:
-            raise ValueError(f"Unknown dataset type: {self.type}")
+            raise ValueError(f"Unknown dataset type: {self.config.type}")
 
     def _metadata(self) -> DatasetMetadata:
         return DatasetMetadata(
@@ -129,32 +157,7 @@ class RvlCdip(AtriaDocumentDataset):
     def _split_iterator(
         self, split: DatasetSplitType, data_dir: str
     ) -> Iterable[tuple[Path, Path, int]]:
-        class SplitIterator(Iterable[tuple[Path, Path, int]]):
-            def __init__(self, split: DatasetSplitType, data_dir: str, type: str):
-                if split == DatasetSplitType.train:
-                    split_file_paths = Path(data_dir) / f"labels/{type}/train.txt"
-                elif split == DatasetSplitType.test:
-                    split_file_paths = Path(data_dir) / f"labels/{type}/test.txt"
-                elif split == DatasetSplitType.validation:
-                    split_file_paths = Path(data_dir) / f"labels/{type}/val.txt"
-                with open(split_file_paths) as f:
-                    self.split_file_paths = f.read().splitlines()
-                self.image_data_dir = data_dir / _IMAGE_DATA_NAME / "images"
-                self.ocr_data_dir = data_dir / _OCR_DATA_NAME / "images"
-
-            def __iter__(self) -> Generator[tuple[Path, Path, int], None, None]:
-                for image_file_path_with_label in self.split_file_paths:
-                    image_file_path, label = image_file_path_with_label.split(" ")
-                    ocr_file_path = Path(self.ocr_data_dir) / image_file_path.replace(
-                        ".tif", ".hocr.lstm"
-                    )
-                    image_file_path = Path(self.image_data_dir) / image_file_path
-                    yield image_file_path, ocr_file_path, label
-
-            def __len__(self) -> int:
-                return len(self.split_file_paths)
-
-        return SplitIterator(split=split, data_dir=Path(data_dir), type=self.type)
+        return SplitIterator(split=split, data_dir=Path(data_dir), config=self.config)
 
     def _input_transform(self, sample: tuple[Path, Path, int]) -> DocumentInstance:
         image_file_path, ocr_file_path, label = sample
@@ -163,7 +166,7 @@ class RvlCdip(AtriaDocumentDataset):
             sample_id=Path(image_file_path).name,
             image=Image(file_path=image_file_path),
             ocr=OCR(file_path=ocr_file_path, type=OCRType.tesseract)
-            if self.load_ocr
+            if self.config.load_ocr
             else None,
             gt=GroundTruth(
                 classification=ClassificationGT(

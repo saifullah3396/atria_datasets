@@ -1,4 +1,11 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from atria_registry import RegistryGroup
+
+if TYPE_CHECKING:
+    from atria_datasets.core.dataset.atria_dataset import AtriaDatasetConfig
 
 
 class DatasetRegistryGroup(RegistryGroup):
@@ -9,7 +16,9 @@ class DatasetRegistryGroup(RegistryGroup):
     within the registry system.
     """
 
-    def register(self, name: str, **kwargs):
+    def register(
+        self, name: str, configs: list[AtriaDatasetConfig] | None = None, **kwargs
+    ):
         """
         Decorator for registering a module with configurations.
 
@@ -21,36 +30,34 @@ class DatasetRegistryGroup(RegistryGroup):
             function: A decorator function for registering the module with configurations.
         """
 
-        def decorator(decorated_class):
-            from atria_datasets.core.dataset.atria_huggingface_dataset import (
-                AtriaHuggingfaceDataset,
-            )
+        from atria_datasets.core.dataset.atria_dataset import AtriaDatasetConfig
+        from atria_datasets.core.dataset.atria_huggingface_dataset import (
+            AtriaHuggingfaceDataset,
+        )
 
-            if not hasattr(decorated_class, "_REGISTRY_CONFIGS"):
-                decorated_class._REGISTRY_CONFIGS = {}
-            configs = decorated_class._REGISTRY_CONFIGS
-            if "default" not in configs and not issubclass(
-                decorated_class, AtriaHuggingfaceDataset
-            ):
-                configs["default"] = {}
-            assert isinstance(configs, dict), (
-                f"Expected _REGISTRY_CONFIGS on {decorated_class.__name__} to be a dict, "
-                f"but got {type(configs).__name__} instead."
+        configs = configs or []
+
+        def decorator(decorated_class):
+            if not issubclass(decorated_class, AtriaHuggingfaceDataset):
+                configs.append(
+                    AtriaDatasetConfig(
+                        config_name="default", dataset_name=name, **kwargs
+                    )
+                )
+            assert isinstance(configs, list) and all(
+                isinstance(config, AtriaDatasetConfig) for config in configs
+            ), (
+                f"Expected configs to be a list of AtriaDatasetConfig, got {type(configs)} instead."
             )
             assert configs, (
                 f"{decorated_class.__name__} must provide at least one configuration in _REGISTRY_CONFIGS."
             )
-            for key, config in configs.items():
-                assert isinstance(config, dict), (
-                    f"Configuration {config} must be a dict."
-                )
-                module_name = name
+            for config in configs:
+                config.dataset_name = name
                 self.register_modules(
                     module_paths=decorated_class,
-                    module_names=module_name + "/" + key,
-                    dataset_name=name,
-                    config_name=key,
-                    **config,
+                    module_names=config.dataset_name + "/" + config.config_name,
+                    **config.__dict__,
                     **kwargs,
                 )
             return decorated_class

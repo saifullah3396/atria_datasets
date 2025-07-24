@@ -16,6 +16,7 @@ from atria_core.types import (
 )
 
 from atria_datasets import DATASET, AtriaDocumentDataset
+from atria_datasets.core.dataset.atria_dataset import AtriaDatasetConfig
 
 _CITATION = """\
 @article{Kumar2014StructuralSF,
@@ -56,16 +57,44 @@ _CLASSES = [
 ]
 
 
-@DATASET.register("tobacco3482")
-class Tobacco3482(AtriaDocumentDataset):
-    _REGISTRY_CONFIGS = {
-        "image_only": {"load_ocr": False},
-        "image_with_ocr": {"load_ocr": True},
-    }
+class Tobacco3482Config(AtriaDatasetConfig):
+    load_ocr: bool = False
 
-    def __init__(self, load_ocr: bool = False, **kwargs):
-        super().__init__(**kwargs)
-        self.load_ocr = load_ocr
+
+class SplitIterator:
+    def __init__(self, split: DatasetSplitType, data_dir: str):
+        if split == DatasetSplitType.train:
+            split_file_paths = Path(data_dir) / "train.txt"
+        elif split == DatasetSplitType.test:
+            split_file_paths = Path(data_dir) / "test.txt"
+        with open(split_file_paths) as f:
+            self.split_file_paths = f.read().splitlines()
+            shuffle(self.split_file_paths)
+        self.image_data_dir = data_dir / _IMAGE_DATA_NAME
+        self.ocr_data_dir = data_dir / _OCR_DATA_NAME
+
+    def __iter__(self):
+        for image_file_path in self.split_file_paths:
+            label_index = _CLASSES.index(Path(image_file_path).parent.name)
+            ocr_file_path = Path(self.ocr_data_dir) / image_file_path.replace(
+                ".jpg", ".hocr"
+            )
+            image_file_path = Path(self.image_data_dir) / image_file_path
+            yield image_file_path, ocr_file_path, label_index
+
+    def __len__(self) -> int:
+        return len(self.split_file_paths)
+
+
+@DATASET.register(
+    "tobacco3482",
+    configs=[
+        Tobacco3482Config(config_name="image_only", load_ocr=False),
+        Tobacco3482Config(config_name="image_with_ocr", load_ocr=True),
+    ],
+)
+class Tobacco3482(AtriaDocumentDataset):
+    __config_cls__ = Tobacco3482Config
 
     def _download_urls(self) -> list[str]:
         return _DATA_URLS
@@ -85,30 +114,6 @@ class Tobacco3482(AtriaDocumentDataset):
     def _split_iterator(
         self, split: DatasetSplitType, data_dir: str
     ) -> Iterable[tuple[Path, Path, int]]:
-        class SplitIterator:
-            def __init__(self, split: DatasetSplitType, data_dir: str):
-                if split == DatasetSplitType.train:
-                    split_file_paths = Path(data_dir) / "train.txt"
-                elif split == DatasetSplitType.test:
-                    split_file_paths = Path(data_dir) / "test.txt"
-                with open(split_file_paths) as f:
-                    self.split_file_paths = f.read().splitlines()
-                    shuffle(self.split_file_paths)
-                self.image_data_dir = data_dir / _IMAGE_DATA_NAME
-                self.ocr_data_dir = data_dir / _OCR_DATA_NAME
-
-            def __iter__(self):
-                for image_file_path in self.split_file_paths:
-                    label_index = _CLASSES.index(Path(image_file_path).parent.name)
-                    ocr_file_path = Path(self.ocr_data_dir) / image_file_path.replace(
-                        ".jpg", ".hocr"
-                    )
-                    image_file_path = Path(self.image_data_dir) / image_file_path
-                    yield image_file_path, ocr_file_path, label_index
-
-            def __len__(self) -> int:
-                return len(self.split_file_paths)
-
         return SplitIterator(split=split, data_dir=Path(data_dir))
 
     def _input_transform(self, sample: tuple[Path, Path, int]) -> DocumentInstance:
@@ -117,7 +122,7 @@ class Tobacco3482(AtriaDocumentDataset):
             sample_id=Path(image_file_path).name,
             image=Image(file_path=image_file_path),
             ocr=OCR(file_path=ocr_file_path, type=OCRType.tesseract)
-            if self.load_ocr
+            if self.config.load_ocr
             else None,
             gt=GroundTruth(
                 classification=ClassificationGT(

@@ -4,7 +4,6 @@ from collections.abc import Generator
 from typing import Any
 
 import pandas as pd
-import PIL
 from atria_core.logger.logger import get_logger
 from atria_core.types import (
     SERGT,
@@ -14,7 +13,6 @@ from atria_core.types import (
     DatasetSplitType,
     DocumentInstance,
     GroundTruth,
-    Image,
     Label,
     LabelList,
 )
@@ -106,6 +104,97 @@ _DATA_URLS = [
 ]
 
 
+class SplitIterator:
+    def __init__(self, split: DatasetSplitType, data_files: pd.DataFrame):
+        self.split = split
+        self.data_files = data_files
+        self.data = pd.concat(
+            [pd.read_parquet(f) for f in data_files], ignore_index=True
+        )
+
+    def _quad_to_box(self, quad: dict[str, int]) -> tuple[int, int, int, int]:
+        box = (max(0, quad["x1"]), max(0, quad["y1"]), quad["x3"], quad["y3"])
+        if box[3] < box[1]:
+            bbox = list(box)
+            tmp = bbox[3]
+            bbox[3] = bbox[1]
+            bbox[1] = tmp
+            box = tuple(bbox)
+        if box[2] < box[0]:
+            bbox = list(box)
+            tmp = bbox[2]
+            bbox[2] = bbox[0]
+            bbox[0] = tmp
+            box = tuple(bbox)
+        return box
+
+    def _load_ground_truth(self, row: pd.Series, image_size: tuple[int, int]) -> SERGT:
+        words = []
+        word_bboxes = []
+        word_segment_level_bboxes = []
+        word_labels = []
+        annotation = json.loads(row["ground_truth"])
+        for item in annotation["valid_line"]:
+            cur_line_bboxes = []
+            line_words, word_label = item["words"], item["category"]
+            line_words = [w for w in line_words if w["text"].strip() != ""]
+            if len(line_words) == 0:
+                continue
+            if word_label == "other":
+                for w in line_words:
+                    words.append(w["text"])
+                    word_labels.append("O")
+                    cur_line_bboxes.append(
+                        _normalize_bbox(self._quad_to_box(w["quad"]), image_size)
+                    )
+            else:
+                words.append(line_words[0]["text"])
+                word_label = word_label.upper().replace("MENU.SUB_", "MENU.SUB.")
+                word_labels.append("B-" + word_label)
+                cur_line_bboxes.append(
+                    _normalize_bbox(
+                        self._quad_to_box(line_words[0]["quad"]), image_size
+                    )
+                )
+                for w in line_words[1:]:
+                    words.append(w["text"])
+                    word_label = word_label.upper().replace("MENU.SUB_", "MENU.SUB.")
+                    word_labels.append("I-" + word_label)
+                    cur_line_bboxes.append(
+                        _normalize_bbox(self._quad_to_box(w["quad"]), image_size)
+                    )
+
+            word_bboxes.extend(cur_line_bboxes)
+            cur_line_bboxes = _get_line_bboxes(cur_line_bboxes)
+            word_segment_level_bboxes.extend(cur_line_bboxes)
+        return annotation["meta"]["image_id"], GroundTruth(
+            ser=SERGT(
+                words=words,
+                word_bboxes=BoundingBoxList(value=word_bboxes),
+                word_labels=LabelList.from_list(
+                    [
+                        Label(value=_CLASSES.index(word_label), name=word_label)
+                        for word_label in word_labels
+                    ]
+                ),
+                segment_level_bboxes=BoundingBoxList(value=word_segment_level_bboxes),
+            )
+        )
+
+    def __iter__(self) -> Generator[tuple[str, dict[str, Any]], None, None]:
+        from atria_core.types import Image
+        from PIL import Image as PILImageModule
+
+        for _, row in self.data.iterrows():
+            image = Image(
+                content=PILImageModule.open(io.BytesIO(row["image"]["bytes"]))
+            )
+            image_id, ground_truth = self._load_ground_truth(row, image.size)
+            yield DocumentInstance(
+                sample_id=str(image_id), image=image, gt=ground_truth
+            )
+
+
 @DATASET.register("cord")
 class CORD(AtriaDocumentDataset):
     def _download_urls(self) -> list[str]:
@@ -130,105 +219,6 @@ class CORD(AtriaDocumentDataset):
     def _split_iterator(
         self, split: DatasetSplitType, data_files: pd.DataFrame
     ) -> Generator[tuple[str, dict[str, Any]], None, None]:
-        class SplitIterator:
-            def __init__(self, split: DatasetSplitType, data_files: pd.DataFrame):
-                self.split = split
-                self.data_files = data_files
-                self.data = pd.concat(
-                    [pd.read_parquet(f) for f in data_files], ignore_index=True
-                )
-
-            def _quad_to_box(self, quad: dict[str, int]) -> tuple[int, int, int, int]:
-                box = (max(0, quad["x1"]), max(0, quad["y1"]), quad["x3"], quad["y3"])
-                if box[3] < box[1]:
-                    bbox = list(box)
-                    tmp = bbox[3]
-                    bbox[3] = bbox[1]
-                    bbox[1] = tmp
-                    box = tuple(bbox)
-                if box[2] < box[0]:
-                    bbox = list(box)
-                    tmp = bbox[2]
-                    bbox[2] = bbox[0]
-                    bbox[0] = tmp
-                    box = tuple(bbox)
-                return box
-
-            def _load_ground_truth(
-                self, row: pd.Series, image_size: tuple[int, int]
-            ) -> SERGT:
-                words = []
-                word_bboxes = []
-                word_segment_level_bboxes = []
-                word_labels = []
-                annotation = json.loads(row["ground_truth"])
-                for item in annotation["valid_line"]:
-                    cur_line_bboxes = []
-                    line_words, word_label = item["words"], item["category"]
-                    line_words = [w for w in line_words if w["text"].strip() != ""]
-                    if len(line_words) == 0:
-                        continue
-                    if word_label == "other":
-                        for w in line_words:
-                            words.append(w["text"])
-                            word_labels.append("O")
-                            cur_line_bboxes.append(
-                                _normalize_bbox(
-                                    self._quad_to_box(w["quad"]), image_size
-                                )
-                            )
-                    else:
-                        words.append(line_words[0]["text"])
-                        word_label = word_label.upper().replace(
-                            "MENU.SUB_", "MENU.SUB."
-                        )
-                        word_labels.append("B-" + word_label)
-                        cur_line_bboxes.append(
-                            _normalize_bbox(
-                                self._quad_to_box(line_words[0]["quad"]), image_size
-                            )
-                        )
-                        for w in line_words[1:]:
-                            words.append(w["text"])
-                            word_label = word_label.upper().replace(
-                                "MENU.SUB_", "MENU.SUB."
-                            )
-                            word_labels.append("I-" + word_label)
-                            cur_line_bboxes.append(
-                                _normalize_bbox(
-                                    self._quad_to_box(w["quad"]), image_size
-                                )
-                            )
-
-                    word_bboxes.extend(cur_line_bboxes)
-                    cur_line_bboxes = _get_line_bboxes(cur_line_bboxes)
-                    word_segment_level_bboxes.extend(cur_line_bboxes)
-                return annotation["meta"]["image_id"], GroundTruth(
-                    ser=SERGT(
-                        words=words,
-                        word_bboxes=BoundingBoxList(value=word_bboxes),
-                        word_labels=LabelList.from_list(
-                            [
-                                Label(value=_CLASSES.index(word_label), name=word_label)
-                                for word_label in word_labels
-                            ]
-                        ),
-                        segment_level_bboxes=BoundingBoxList(
-                            value=word_segment_level_bboxes
-                        ),
-                    )
-                )
-
-            def __iter__(self) -> Generator[tuple[str, dict[str, Any]], None, None]:
-                for _, row in self.data.iterrows():
-                    image = Image(
-                        content=PIL.Image.open(io.BytesIO(row["image"]["bytes"]))
-                    )
-                    image_id, ground_truth = self._load_ground_truth(row, image.size)
-                    yield DocumentInstance(
-                        sample_id=str(image_id), image=image, gt=ground_truth
-                    )
-
         return SplitIterator(
             split,
             [

@@ -54,6 +54,53 @@ _CLASSES = [
 ]
 
 
+class SplitIterator:
+    def __init__(self, split: DatasetSplitType, data_dir: str):
+        self.split = split
+        self.data_dir = Path(data_dir)
+
+        base_path = self.data_dir / "ICDAR-2013.c-Structure" / "ICDAR-2013.c-Structure"
+
+        if split == DatasetSplitType.test:
+            split_path = "test"
+        elif split == DatasetSplitType.validation:
+            split_path = "val"
+
+        self.xmls_dir = base_path / split_path
+        self.images_dir = base_path / "images"
+        self.words_dir = base_path / "words"
+
+    def __iter__(self) -> Generator[DocumentInstance, None, None]:
+        xml_filenames = [
+            elem for elem in os.listdir(self.xmls_dir) if elem.endswith(".xml")
+        ]
+        for filename in xml_filenames:
+            xml_filepath = self.xmls_dir / filename
+            image_file_path = self.images_dir / filename.replace(".xml", ".jpg")
+            word_file_path = self.words_dir / filename.replace(".xml", "_words.json")
+
+            annotated_objects = read_pascal_voc(xml_filepath, labels=_CLASSES)
+            words, word_bboxes = read_words_json(word_file_path)
+
+            yield DocumentInstance(
+                sample_id=Path(image_file_path).name,
+                image=Image(file_path=image_file_path),
+                gt=GroundTruth(
+                    layout=LayoutAnalysisGT(
+                        annotated_objects=annotated_objects,
+                        words=words,
+                        word_bboxes=BoundingBoxList.from_list(word_bboxes),
+                    )
+                ),
+            )
+
+    def __len__(self) -> int:
+        xml_filenames = [
+            elem for elem in os.listdir(self.xmls_dir) if elem.endswith(".xml")
+        ]
+        return len(xml_filenames)
+
+
 @DATASET.register("icdar2013")
 class ICDAR2013(AtriaDocumentDataset):
     def _download_urls(self) -> list[str]:
@@ -74,54 +121,4 @@ class ICDAR2013(AtriaDocumentDataset):
     def _split_iterator(
         self, split: DatasetSplitType, data_dir: str
     ) -> Generator[DocumentInstance, None, None]:
-        class SplitIterator:
-            def __init__(self, split: DatasetSplitType, data_dir: str):
-                self.split = split
-                self.data_dir = Path(data_dir)
-
-                base_path = (
-                    self.data_dir / "ICDAR-2013.c-Structure" / "ICDAR-2013.c-Structure"
-                )
-
-                if split == DatasetSplitType.test:
-                    split_path = "test"
-                elif split == DatasetSplitType.validation:
-                    split_path = "val"
-
-                self.xmls_dir = base_path / split_path
-                self.images_dir = base_path / "images"
-                self.words_dir = base_path / "words"
-
-            def __iter__(self) -> Generator[DocumentInstance, None, None]:
-                xml_filenames = [
-                    elem for elem in os.listdir(self.xmls_dir) if elem.endswith(".xml")
-                ]
-                for filename in xml_filenames:
-                    xml_filepath = self.xmls_dir / filename
-                    image_file_path = self.images_dir / filename.replace(".xml", ".jpg")
-                    word_file_path = self.words_dir / filename.replace(
-                        ".xml", "_words.json"
-                    )
-
-                    annotated_objects = read_pascal_voc(xml_filepath, labels=_CLASSES)
-                    words, word_bboxes = read_words_json(word_file_path)
-
-                    yield DocumentInstance(
-                        sample_id=Path(image_file_path).name,
-                        image=Image(file_path=image_file_path),
-                        gt=GroundTruth(
-                            layout=LayoutAnalysisGT(
-                                annotated_objects=annotated_objects,
-                                words=words,
-                                word_bboxes=BoundingBoxList.from_list(word_bboxes),
-                            )
-                        ),
-                    )
-
-            def __len__(self) -> int:
-                xml_filenames = [
-                    elem for elem in os.listdir(self.xmls_dir) if elem.endswith(".xml")
-                ]
-                return len(xml_filenames)
-
         return SplitIterator(split=split, data_dir=data_dir)

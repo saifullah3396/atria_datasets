@@ -16,7 +16,10 @@ from atria_core.types import (
 )
 
 from atria_datasets import DATASET
-from atria_datasets.core.dataset.atria_dataset import AtriaDocumentDataset
+from atria_datasets.core.dataset.atria_dataset import (
+    AtriaDatasetConfig,
+    AtriaDocumentDataset,
+)
 
 from .utilities import _normalize_bbox, _sorted_indices_in_reading_order
 
@@ -61,11 +64,113 @@ _CLASSES = [
 ]
 
 
+class WildReceiptsConfig(AtriaDatasetConfig):
+    apply_reading_order_correction: bool = True
+
+
+class SplitIterator:
+    def __init__(
+        self, split: DatasetSplitType, data_dir: str, config: WildReceiptsConfig
+    ):
+        self.split = split
+        self.data_dir = Path(data_dir)
+        self.config = config
+
+        if split == DatasetSplitType.train:
+            self.split_file_path = (
+                self.data_dir / "wildreceipt/wildreceipt" / "train.txt"
+            )
+        elif split == DatasetSplitType.test:
+            self.split_file_path = (
+                self.data_dir / "wildreceipt/wildreceipt" / "test.txt"
+            )
+
+    def _read_label_map(self, filepath: Path) -> dict[int, str]:
+        label_map = {}
+        with open(filepath, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                idx, label = line.split(maxsplit=1)
+                label_map[int(idx)] = label.strip()
+        return label_map
+
+    def _load_ground_truth(
+        self, sample_info: dict, image_size: tuple[int, int]
+    ) -> GroundTruth:
+        words = []
+        labels = []
+        bboxes = []
+        id2labels = self._read_label_map(self.split_file_path.parent / "class_list.txt")
+
+        for i in sample_info["annotations"]:
+            label = id2labels[i["label"]]
+            if (
+                label == "Ignore" or i["text"] == ""
+            ):  # label 0 is attached to ignore so we skip it
+                continue
+            if label in ["Others"]:
+                label = "O"
+            else:
+                label = "B-" + label
+            labels.append(label)
+            words.append(i["text"])
+            bboxes.append(
+                _normalize_bbox(
+                    [i["box"][6], i["box"][7], i["box"][2], i["box"][3]], image_size
+                )
+            )
+
+        # sort the word reading order
+        if self.config.apply_reading_order_correction:
+            sorted_indices = _sorted_indices_in_reading_order(bboxes)
+            words = [words[i] for i in sorted_indices]
+            word_labels = [labels[i] for i in sorted_indices]
+            word_bboxes = [bboxes[i] for i in sorted_indices]
+        else:
+            word_labels = labels
+            word_bboxes = bboxes
+
+        return GroundTruth(
+            ser=SERGT(
+                words=words,
+                word_bboxes=BoundingBoxList(value=word_bboxes),
+                word_labels=LabelList.from_list(
+                    [
+                        Label(value=_CLASSES.index(label), name=label)
+                        for label in word_labels
+                    ]
+                ),
+            )
+        )
+
+    def __iter__(self) -> Generator[DocumentInstance, None, None]:
+        item_list = []
+        with open(self.split_file_path) as f:
+            for line in f:
+                item_list.append(line.rstrip("\n\r"))
+
+        for filename in item_list:
+            sample_info = json.loads(filename)
+            image = Image(
+                file_path=self.split_file_path.parent / sample_info["file_name"]
+            )
+            ground_truth = self._load_ground_truth(
+                sample_info=sample_info, image_size=image.size
+            )
+            yield DocumentInstance(
+                sample_id=sample_info["file_name"], image=image, gt=ground_truth
+            )
+
+    def __len__(self) -> int:
+        with open(self.split_file_path) as f:
+            return sum(1 for _ in f)
+
+
 @DATASET.register("wild_receipts")
 class WildReceipts(AtriaDocumentDataset):
-    def __init__(self, apply_reading_order_correction: bool = True, **kwargs):
-        self._apply_reading_order_correction = apply_reading_order_correction
-        super().__init__(**kwargs)
+    __config_cls__ = WildReceiptsConfig
 
     def _download_urls(self) -> list[str]:
         return _DATA_URLS
@@ -85,107 +190,4 @@ class WildReceipts(AtriaDocumentDataset):
     def _split_iterator(
         self, split: DatasetSplitType, data_dir: str
     ) -> Generator[DocumentInstance, None, None]:
-        class SplitIterator:
-            def __init__(self, split: DatasetSplitType, data_dir: str):
-                self.split = split
-                self.data_dir = Path(data_dir)
-
-                if split == DatasetSplitType.train:
-                    self.split_file_path = (
-                        self.data_dir / "wildreceipt/wildreceipt" / "train.txt"
-                    )
-                elif split == DatasetSplitType.test:
-                    self.split_file_path = (
-                        self.data_dir / "wildreceipt/wildreceipt" / "test.txt"
-                    )
-
-                self.apply_reading_order_correction = getattr(
-                    self, "apply_reading_order_correction", True
-                )
-
-            def _read_label_map(self, filepath: Path) -> dict[int, str]:
-                label_map = {}
-                with open(filepath, encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        idx, label = line.split(maxsplit=1)
-                        label_map[int(idx)] = label.strip()
-                return label_map
-
-            def _load_ground_truth(
-                self, sample_info: dict, image_size: tuple[int, int]
-            ) -> GroundTruth:
-                words = []
-                labels = []
-                bboxes = []
-                id2labels = self._read_label_map(
-                    self.split_file_path.parent / "class_list.txt"
-                )
-
-                for i in sample_info["annotations"]:
-                    label = id2labels[i["label"]]
-                    if (
-                        label == "Ignore" or i["text"] == ""
-                    ):  # label 0 is attached to ignore so we skip it
-                        continue
-                    if label in ["Others"]:
-                        label = "O"
-                    else:
-                        label = "B-" + label
-                    labels.append(label)
-                    words.append(i["text"])
-                    bboxes.append(
-                        _normalize_bbox(
-                            [i["box"][6], i["box"][7], i["box"][2], i["box"][3]],
-                            image_size,
-                        )
-                    )
-
-                # sort the word reading order
-                if self.apply_reading_order_correction:
-                    sorted_indices = _sorted_indices_in_reading_order(bboxes)
-                    words = [words[i] for i in sorted_indices]
-                    word_labels = [labels[i] for i in sorted_indices]
-                    word_bboxes = [bboxes[i] for i in sorted_indices]
-                else:
-                    word_labels = labels
-                    word_bboxes = bboxes
-
-                return GroundTruth(
-                    ser=SERGT(
-                        words=words,
-                        word_bboxes=BoundingBoxList(value=word_bboxes),
-                        word_labels=LabelList.from_list(
-                            [
-                                Label(value=_CLASSES.index(label), name=label)
-                                for label in word_labels
-                            ]
-                        ),
-                    )
-                )
-
-            def __iter__(self) -> Generator[DocumentInstance, None, None]:
-                item_list = []
-                with open(self.split_file_path) as f:
-                    for line in f:
-                        item_list.append(line.rstrip("\n\r"))
-
-                for filename in item_list:
-                    sample_info = json.loads(filename)
-                    image = Image(
-                        file_path=self.split_file_path.parent / sample_info["file_name"]
-                    )
-                    ground_truth = self._load_ground_truth(
-                        sample_info=sample_info, image_size=image.size
-                    )
-                    yield DocumentInstance(
-                        sample_id=sample_info["file_name"], image=image, gt=ground_truth
-                    )
-
-            def __len__(self) -> int:
-                with open(self.split_file_path) as f:
-                    return sum(1 for _ in f)
-
-        return SplitIterator(split=split, data_dir=data_dir)
+        return SplitIterator(split=split, data_dir=data_dir, config=self.config)
