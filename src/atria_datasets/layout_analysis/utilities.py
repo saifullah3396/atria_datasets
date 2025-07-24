@@ -62,14 +62,12 @@ def _load_coco_json(
         # However the ratio of buggy annotations there is tiny and does not affect accuracy.
         # Therefore we explicitly white-list them.
         ann_ids = [ann["id"] for anns_per_image in anns for ann in anns_per_image]
-        assert len(set(ann_ids)) == len(
-            ann_ids
-        ), "Annotation ids in '{}' are not unique!".format(json_file)
+        assert len(set(ann_ids)) == len(ann_ids), (
+            f"Annotation ids in '{json_file}' are not unique!"
+        )
 
     imgs_anns = list(zip(imgs, anns))
-    logger.info(
-        "Loaded {} images in COCO format from {}".format(len(imgs_anns), json_file)
-    )
+    logger.info(f"Loaded {len(imgs_anns)} images in COCO format from {json_file}")
 
     dataset_dicts = []
 
@@ -97,9 +95,9 @@ def _load_coco_json(
             # can trigger this assertion.
             assert anno["image_id"] == image_id
 
-            assert (
-                anno.get("ignore", 0) == 0
-            ), '"ignore" in COCO json file is not supported.'
+            assert anno.get("ignore", 0) == 0, (
+                '"ignore" in COCO json file is not supported.'
+            )
 
             obj = {key: anno[key] for key in ann_keys if key in anno}
             if "bbox" in obj and len(obj["bbox"]) == 0:
@@ -150,9 +148,7 @@ def _load_coco_json(
 
     if num_instances_without_valid_segmentation > 0:
         logger.warning(
-            "Filtered out {} instances without valid segmentation. ".format(
-                num_instances_without_valid_segmentation
-            )
+            f"Filtered out {num_instances_without_valid_segmentation} instances without valid segmentation. "
             + "There might be issues in your dataset generation process.  Please "
             "check https://detectron2.readthedocs.io/en/latest/tutorials/datasets.html carefully"
         )

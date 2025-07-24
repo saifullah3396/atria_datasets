@@ -27,25 +27,26 @@ Version: 1.0.0
 License: MIT
 """
 
+from __future__ import annotations
+
 from collections.abc import Generator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic
 
 from atria_core.logger import get_logger
-from atria_core.types import (
-    DatasetMetadata,
-    DatasetSplitType,
-    DocumentInstance,
-    ImageInstance,
-)
+from atria_core.types import DocumentInstance, ImageInstance
 
-from atria_datasets.core.constants import _DEFAULT_DOWNLOAD_PATH
 from atria_datasets.core.dataset.atria_dataset import AtriaDataset
-from atria_datasets.core.dataset.split_iterator import SplitIterator
 from atria_datasets.core.typing.common import T_BaseDataInstance
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+    from typing import TYPE_CHECKING, Any, Generic
+
     import datasets
+    from atria_core.logger import get_logger
+    from atria_core.types import DatasetMetadata, DatasetSplitType
+
 
 logger = get_logger(__name__)
 
@@ -74,24 +75,35 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
 
     __abstract__ = True
 
-    def __init__(
-        self,
-        hf_repo: str,
-        hf_config_name: str,
-        max_train_samples: int | None = None,
-        max_validation_samples: int | None = None,
-        max_test_samples: int | None = None,
-    ):
+    def __init__(self, hf_repo: str = None, hf_config_name: str = None, **kwargs):
+        super().__init__(**kwargs)
+
         self._hf_repo = hf_repo
         self._hf_config_name = hf_config_name
         self._dataset_builder = None
         self._hf_split_generators = None
 
-        super().__init__(
-            max_train_samples=max_train_samples,
-            max_validation_samples=max_validation_samples,
-            max_test_samples=max_test_samples,
+        assert hf_repo is not None, "Hugging Face repository must be specified."
+        assert hf_config_name is not None, (
+            "Hugging Face configuration name must be specified"
         )
+
+    @classmethod
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        from hydra_zen import builds
+
+        # Get any builds_bases already defined on subclass
+        existing_bases = getattr(cls, "__builds_bases__", ())
+
+        # Always add builds of AtriaHuggingfaceDataset as a base
+        atria_base = builds(AtriaHuggingfaceDataset, populate_full_signature=True)
+
+        # Avoid duplicates, add atria_base if not already present
+        if atria_base not in existing_bases:
+            cls.__builds_bases__ = (atria_base,) + existing_bases
+        else:
+            cls.__builds_bases__ = existing_bases
 
     def prepare_downloads(self, data_dir: str, access_token: str | None = None) -> None:
         """
@@ -103,6 +115,10 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         Returns:
             None
         """
+
+        from atria_core.types import DatasetSplitType
+
+        from atria_datasets.core.constants import _DEFAULT_DOWNLOAD_PATH
 
         if not self._downloads_prepared:
             download_dir = Path(data_dir) / _DEFAULT_DOWNLOAD_PATH
@@ -131,6 +147,8 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         access_token: str | None = None,
     ) -> None:
         """Prepare splits without caching (direct iteration)."""
+        from atria_datasets.core.dataset.split_iterator import SplitIterator
+
         self._dataset_builder = self._prepare_dataset_builder(data_dir)
         self.prepare_downloads(data_dir=str(data_dir), access_token=access_token)
         for split in self._available_splits():
@@ -146,6 +164,10 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         self, access_token: str | None = None, overwrite_existing: bool = False
     ) -> None:
         """Prepare cached splits using DeltaLake storage."""
+
+        from atria_core.types import DatasetSplitType
+
+        from atria_datasets.core.dataset.split_iterator import SplitIterator
         from atria_datasets.core.storage.deltalake_storage_manager import (
             DeltalakeStorageManager,
         )
@@ -201,7 +223,7 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         """
         return list(self._hf_split_generators.keys())
 
-    def _prepare_dataset_builder(self, data_dir: str) -> "datasets.DatasetBuilder":
+    def _prepare_dataset_builder(self, data_dir: str) -> datasets.DatasetBuilder:
         """
         Prepares the Hugging Face dataset builder.
 
@@ -227,7 +249,7 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
 
     def _prepare_download_manager(
         self, data_dir: str, download_dir: str
-    ) -> "datasets.DownloadManager":
+    ) -> datasets.DownloadManager:
         """
         Prepares the download manager for the datasets.
 
@@ -278,6 +300,7 @@ class AtriaHuggingfaceDataset(AtriaDataset, Generic[T_BaseDataInstance]):
         Yields:
             BaseDataInstanceType: The dataset instances for the specified split.
         """
+
         return self._prepare_dataset_builder(data_dir)._as_streaming_dataset_single(
             self._hf_split_generators[split.value]
         )

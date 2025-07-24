@@ -2,21 +2,21 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 declare -a small_datasets=(
-    # "cifar10/1k"
-    # "huggingface_cifar10/plain_text_1k"
-    # "tobacco3482/image_with_ocr"
-    # "rvlcdip/image_with_ocr_1k"
-    # "mnist/mnist_1k"
-    # "cord/default"
-    # "funsd/default"
-    # "sroie/default"
-    # "wild_receipts/default"
-    # "docile/kile"
-    "docbank/1k"  # too big, failing downloads
+    "cifar10/1k" # tested
+    "huggingface_cifar10/plain_text_1k" # tested
+    "tobacco3482/image_with_ocr" # tested
+    "rvlcdip/image_with_ocr_1k" # tested
+    "mnist/mnist_1k" # tested
+    # "cord/default" # tested
+    # "funsd/default" # tested
+    # "sroie/default" # tested
+    # "wild_receipts/default" # tested
+    # "docile/kile" # tested
+    # "docbank/1k"  # too big, failing downloads
     # "fintabnet/1k" 
     # "icdar2019/trackA_modern"
     # "icdar2013/default"
-    "docvqa/default" 
+    # "docvqa/default" 
 )
 
 
@@ -31,20 +31,17 @@ declare -a big_datasets=(
 
 
 if [[ "$1" == "small_datasets" ]]; then
-    for dataset_entry in "${available_datasets[@]}"; do
-        IFS="/" read -r name config <<< "$dataset_entry"
+    for dataset_entry in "${small_datasets[@]}"; do
         echo "Processing dataset: $name with config: $config"
-        uv run python -m atria_datasets.prepare_dataset $name $config ${@:2}
+        uv run python -m atria_datasets.prepare_dataset $dataset_entry ${@:2}
     done
 elif [[ "$1" == "big_datasets" ]]; then
     for dataset_entry in "${big_datasets[@]}"; do
-        IFS="/" read -r name config <<< "$dataset_entry"
         echo "Processing dataset: $name with config: $config"
-        uv run python -m atria_datasets.prepare_dataset $name $config ${@:2}
+        uv run python -m atria_datasets.prepare_dataset $dataset_entry ${@:2}
     done
 else
     dataset_entry="$1"
-    IFS="/" read -r name config <<< "$dataset_entry"
     echo "Processing dataset: $name with config: $config"
-    uv run python -m atria_datasets.prepare_dataset $name $config ${@:2}
+    uv run python -m atria_datasets.prepare_dataset $dataset_entry ${@:2}
 fi

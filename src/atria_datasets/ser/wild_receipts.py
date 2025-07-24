@@ -63,15 +63,9 @@ _CLASSES = [
 
 @DATASET.register("wild_receipts")
 class WildReceipts(AtriaDocumentDataset):
-    def __init__(
-        self,
-        max_train_samples: int | None = None,
-        max_validation_samples: int | None = None,
-        max_test_samples: int | None = None,
-        apply_reading_order_correction: bool = True,
-    ):
+    def __init__(self, apply_reading_order_correction: bool = True, **kwargs):
         self._apply_reading_order_correction = apply_reading_order_correction
-        super().__init__(max_train_samples, max_validation_samples, max_test_samples)
+        super().__init__(**kwargs)
 
     def _download_urls(self) -> list[str]:
         return _DATA_URLS

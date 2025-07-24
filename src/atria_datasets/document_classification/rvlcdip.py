@@ -96,17 +96,11 @@ class RvlCdip(AtriaDocumentDataset):
 
     def __init__(
         self,
-        max_train_samples: int | None = None,  # these get passed to the config
-        max_validation_samples: int | None = None,  # these get passed to the config
-        max_test_samples: int | None = None,  # these get passed to the config
         type: str = "default",  # type of dataset to load, e.g., "default" or "tobacco3482_included"
         load_ocr: bool = False,
+        **kwargs,
     ):
-        super().__init__(
-            max_train_samples=max_train_samples,
-            max_validation_samples=max_validation_samples,
-            max_test_samples=max_test_samples,
-        )
+        super().__init__(**kwargs)
         self.type = type
         self.load_ocr = load_ocr
 

@@ -87,19 +87,17 @@ class Docile(AtriaDocumentDataset):
 
     def __init__(
         self,
-        max_train_samples: int | None = None,
-        max_validation_samples: int | None = None,
-        max_test_samples: int | None = None,
         synthetic: bool = False,
         overlap_threshold: float = 0.5,
         image_shape: tuple = (1024, 1024),
         type: str = "kile",
+        **kwargs,
     ):
         self._synthetic = synthetic
         self._overlap_threshold = overlap_threshold
         self._image_shape = image_shape
         self._type = type
-        super().__init__(max_train_samples, max_validation_samples, max_test_samples)
+        super().__init__(**kwargs)
 
     def _download_urls(self) -> list[str]:
         if self._synthetic:

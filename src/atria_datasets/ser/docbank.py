@@ -102,15 +102,9 @@ class DocBankLER(AtriaDocumentDataset):
         }
     }
 
-    def __init__(
-        self,
-        max_train_samples: int | None = None,
-        max_validation_samples: int | None = None,
-        max_test_samples: int | None = None,
-        max_words_per_sample: int = 4000,
-    ):
+    def __init__(self, max_words_per_sample: int = 4000, **kwargs):
         self._max_words_per_sample = max_words_per_sample
-        super().__init__(max_train_samples, max_validation_samples, max_test_samples)
+        super().__init__(**kwargs)
 
     def _download_urls(self) -> list[str]:
         return _DATA_URLS

@@ -23,14 +23,14 @@ class DatasetRegistryGroup(RegistryGroup):
 
         def decorator(decorated_class):
             from atria_datasets.core.dataset.atria_huggingface_dataset import (
-                AtriaHuggingfaceDocumentDataset,
+                AtriaHuggingfaceDataset,
             )
 
             if not hasattr(decorated_class, "_REGISTRY_CONFIGS"):
                 decorated_class._REGISTRY_CONFIGS = {}
             configs = decorated_class._REGISTRY_CONFIGS
             if "default" not in configs and not issubclass(
-                decorated_class, AtriaHuggingfaceDocumentDataset
+                decorated_class, AtriaHuggingfaceDataset
             ):
                 configs["default"] = {}
             assert isinstance(configs, dict), (
@@ -48,6 +48,8 @@ class DatasetRegistryGroup(RegistryGroup):
                 self.register_modules(
                     module_paths=decorated_class,
                     module_names=module_name + "/" + key,
+                    dataset_name=name,
+                    config_name=key,
                     **config,
                     **kwargs,
                 )

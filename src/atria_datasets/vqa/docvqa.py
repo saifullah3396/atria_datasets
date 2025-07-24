@@ -75,20 +75,13 @@ def find_answers_in_words(words, answers, extraction_method="v1"):
 @DATASET.register("docvqa")
 class DocVQA(AtriaDocumentDataset):
     def __init__(
-        self,
-        max_train_samples: int | None = None,
-        max_validation_samples: int | None = None,
-        max_test_samples: int | None = None,
-        answers_extraction_method: str = "v1",
-        with_msr_ocr: bool = True,
+        self, answers_extraction_method: str = "v1", with_msr_ocr: bool = True, **kwargs
     ):
         super().__init__(
-            max_train_samples=max_train_samples,
-            max_validation_samples=max_validation_samples,
-            max_test_samples=max_test_samples,
+            answers_extraction_method=answers_extraction_method,
+            with_msr_ocr=with_msr_ocr,
+            **kwargs,
         )
-        self.answers_extraction_method = answers_extraction_method
-        self.with_msr_ocr = with_msr_ocr
 
     def _download_urls(self) -> list[str]:
         return _URLS
@@ -113,13 +106,15 @@ class DocVQA(AtriaDocumentDataset):
         self, split: DatasetSplitType, data_dir: str
     ) -> Iterable[DocumentInstance]:
         class SplitIterator:
-            def __init__(self, split: DatasetSplitType, data_dir: str):
+            def __init__(
+                self,
+                split: DatasetSplitType,
+                data_dir: str,
+                answers_extraction_method: str = "v1",
+                with_msr_ocr: bool = True,
+            ):
                 self.split = split
                 self.data_dir = Path(data_dir) / "docvqa"
-                self.answers_extraction_method = getattr(
-                    self, "answers_extraction_method", "v1"
-                )
-                self.with_msr_ocr = getattr(self, "with_msr_ocr", True)
 
                 # Set up file paths based on split
                 if split == DatasetSplitType.train:

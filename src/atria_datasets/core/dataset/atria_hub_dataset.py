@@ -26,7 +26,6 @@ from collections.abc import Callable, Generator, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from atria_core.constants import _DEFAULT_ATRIA_DATASETS_CACHE_DIR
 from atria_core.logger import get_logger
 from atria_core.types import (
     DatasetSplitType,
@@ -81,15 +80,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
     __abstract__ = True
 
     def __init__(
-        self,
-        username: str,
-        dataset_name: str,
-        config_name: str | None = None,
-        branch: str | None = None,
-        load_mode: DatasetLoadingMode = DatasetLoadingMode.in_memory,
-        max_train_samples: int | None = None,  # these get passed to the config
-        max_validation_samples: int | None = None,  # these get passed to the config
-        max_test_samples: int | None = None,  # these get passed to the config
+        self, username: str | None = None, branch: str | None = None, **kwargs
     ) -> None:
         """
         Initialize the AtriaHubDataset.
@@ -104,22 +95,33 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             ImportError: If atria_hub package is not installed
             ValueError: If dataset configuration is invalid
         """
+        super().__init__(**kwargs)
+
         # Core dataset identifiers
         self._username = username
-        self._dataset_name = dataset_name
-        self._config_name = config_name
         self._branch = branch
-        self._dataset_load_mode = load_mode
 
         # Initialize hub connection and dataset info
         self._hub = self._initialize_hub()
         self._dataset_info = self._initialize_dataset_info()
 
-        super().__init__(
-            max_train_samples=max_train_samples,
-            max_validation_samples=max_validation_samples,
-            max_test_samples=max_test_samples,
-        )
+    @classmethod
+    def __init_subclass__(cls, **kwargs):
+        from hydra_zen import builds
+
+        # Get any builds_bases already defined on subclass
+        existing_bases = getattr(cls, "__builds_bases__", ())
+
+        # Always add builds of AtriaHuggingfaceDataset as a base
+        atria_base = builds(AtriaHubDataset, populate_full_signature=True)
+
+        # Avoid duplicates, add atria_base if not already present
+        if atria_base not in existing_bases:
+            cls.__builds_bases__ = (atria_base,) + existing_bases
+        else:
+            cls.__builds_bases__ = existing_bases
+
+        super().__init_subclass__(**kwargs)
 
     @classmethod
     def load_from_hub(
@@ -131,6 +133,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         preprocess_transform: Callable | None = None,
         access_token: str | None = None,
         dataset_load_mode: DatasetLoadingMode = DatasetLoadingMode.in_memory,
+        overwrite_existing_cached: bool = False,
         overwrite_existing_shards: bool = False,
         allowed_keys: set[str] | None = None,
         shard_storage_type: FileStorageType | None = None,
@@ -147,6 +150,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             overwrite_existing_shards: Whether to overwrite existing local shards
             allowed_keys: Set of keys to include in the data. If None, includes all keys
             shard_storage_type: Type of storage for sharded data
+            overwrite_existing_cached: Whether to overwrite existing cached data
             sharded_storage_kwargs: Additional arguments for sharded storage
             streaming: Whether to stream data from hub or download locally
 
@@ -178,19 +182,14 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             branch=branch,
             config_name=config_name,
         )
-        if data_dir is None:
-            data_dir = _DEFAULT_ATRIA_DATASETS_CACHE_DIR / dataset_name
-            logger.warning(
-                f"No data_dir provided. Using default cache directory:\n{data_dir}"
-            )
         dataset.build(
             data_dir=data_dir,
-            config_name=config_name,
             preprocess_transform=preprocess_transform,
             access_token=access_token,
             dataset_load_mode=dataset_load_mode,
             overwrite_existing_shards=overwrite_existing_shards,
             allowed_keys=allowed_keys,
+            overwrite_existing_cached=overwrite_existing_cached,
             shard_storage_type=shard_storage_type,
             **sharded_storage_kwargs,
         )
@@ -286,20 +285,20 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             Dataset as DatasetInfo,  # type: ignore[import-not-found]
         )
 
+        if self._username is None:
+            self._username = self._hub.auth.username
         self._dataset_info: DatasetInfo = self._hub.datasets.get_by_name(
             username=self._username, name=self._dataset_name
         )
         self._branch = self._branch or self._dataset_info.default_branch
         self._repo_path = f"lakefs://{self._dataset_info.repo_id}/{self._branch}"
-        try:
-            self._config = self._hub.datasets.get_config(
-                self._dataset_info.repo_id,
-                branch=self._branch,
-                config_name=self._config_name,
-            )
-        except RuntimeError as e:
-            logger.error(f"Failed to load dataset config: {e}")
-            raise e
+        available_configs = self._hub.datasets.get_available_configs(
+            self._dataset_info.repo_id, branch=self._branch
+        )
+        assert self._config_name in available_configs, (
+            f"Configuration '{self._config_name}' not found in dataset '{self._username}/{self._dataset_info.name}' "
+            f"on branch '{self._branch}'. Available configurations: {available_configs}"
+        )
         return self._dataset_info
 
     # ==================== Path Management ====================
@@ -355,6 +354,17 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             return
 
         if not self._downloads_prepared:
+            if self.is_dataset_downloaded(storage_dir=self._storage_dir):
+                if self._overwrite_existing_cached:
+                    logger.warning(
+                        f"Overwriting existing dataset '{self._dataset_name}' in '{self._storage_dir}'."
+                    )
+                else:
+                    logger.info(
+                        f"Dataset '{self._dataset_name}' already exists in '{self._storage_dir}'. Skipping download."
+                    )
+                    self._downloads_prepared = True
+                    return
             logger.info(
                 f"Downloading dataset '{self._dataset_name}' to '{self._storage_dir}' from repository '{self._dataset_info.name}'."
             )
@@ -369,23 +379,22 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
     def build(
         self,
         data_dir: str,
-        config_name: str | None = None,
         runtime_transforms: Callable | None = None,
         preprocess_transform: Callable | None = None,
         access_token: str | None = None,
         dataset_load_mode: DatasetLoadingMode = DatasetLoadingMode.in_memory,
+        overwrite_existing_cached: bool = False,
         overwrite_existing_shards: bool = False,
         allowed_keys: set[str] | None = None,
         **sharded_storage_kwargs,
     ) -> None:
         return super().build(
             data_dir=data_dir,
-            config_name=config_name,
             runtime_transforms=runtime_transforms,
             preprocess_transform=preprocess_transform,
             access_token=access_token,
             dataset_load_mode=dataset_load_mode,
-            overwrite_existing_cached=False,
+            overwrite_existing_cached=overwrite_existing_cached,
             overwrite_existing_shards=overwrite_existing_shards,
             allowed_keys=allowed_keys,
             enable_cached_splits=False,

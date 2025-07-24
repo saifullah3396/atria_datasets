@@ -63,18 +63,8 @@ class Tobacco3482(AtriaDocumentDataset):
         "image_with_ocr": {"load_ocr": True},
     }
 
-    def __init__(
-        self,
-        max_train_samples: int | None = None,  # these get passed to the config
-        max_validation_samples: int | None = None,  # these get passed to the config
-        max_test_samples: int | None = None,  # these get passed to the config
-        load_ocr: bool = False,
-    ):
-        super().__init__(
-            max_train_samples=max_train_samples,
-            max_validation_samples=max_validation_samples,
-            max_test_samples=max_test_samples,
-        )
+    def __init__(self, load_ocr: bool = False, **kwargs):
+        super().__init__(**kwargs)
         self.load_ocr = load_ocr
 
     def _download_urls(self) -> list[str]:

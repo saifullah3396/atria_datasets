@@ -8,7 +8,6 @@ logger = get_logger(__name__)
 
 def main(
     name: str,
-    config_name: str,
     access_token: str | None = None,
     overwrite_existing_cached: bool = False,
     overwrite_existing_shards: bool = False,
@@ -20,7 +19,6 @@ def main(
 
     dataset = AtriaDataset.load_from_registry(
         name=name,
-        config_name=config_name,
         overwrite_existing_cached=overwrite_existing_cached,
         overwrite_existing_shards=overwrite_existing_shards,
         access_token=access_token,
@@ -31,10 +29,9 @@ def main(
     for sample in dataset.train:
         sample.load()
         break
+
     if upload_to_hub:
-        dataset.upload_to_hub(
-            name=name.replace("_", "-"), overwrite_existing=overwrite_in_hub
-        )
+        dataset.upload_to_hub(overwrite_existing=overwrite_in_hub)
 
 
 if __name__ == "__main__":

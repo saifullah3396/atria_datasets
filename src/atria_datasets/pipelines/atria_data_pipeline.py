@@ -21,19 +21,17 @@ Version: 1.0.0
 License: MIT
 """
 
+from dataclasses import dataclass
 from functools import partial
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import rich
-from atria_core.constants import _DEFAULT_ATRIA_DATASETS_CACHE_DIR
 from atria_core.logger.logger import get_logger
 from atria_core.transforms.base import DataTransformsDict
 from atria_core.types import DatasetSplitType
 from atria_core.utilities.repr import RepresentationMixin
 from rich.pretty import pretty_repr
 
-from atria_datasets.core.batch_samplers.batch_samplers_dict import BatchSamplersDict
 from atria_datasets.core.dataset.atria_dataset import AtriaDataset
 from atria_datasets.core.dataset_splitters.standard_splitter import StandardSplitter
 from atria_datasets.core.storage.utilities import FileStorageType
@@ -47,17 +45,28 @@ from atria_datasets.registry import DATA_PIPELINE
 if TYPE_CHECKING:
     from torch.utils.data import DataLoader, Dataset  # type: ignore
 
+
 logger = get_logger(__name__)
 
-BASE_HYDRA_DEFAULTS = [
-    "_self_",
-    {"/dataset@dataset": None},
-    {"/batch_sampler@batch_samplers.train": None},
-    {"/batch_sampler@batch_samplers.evaluation": None},
-]
+
+@dataclass
+class DataloaderConfig:
+    train_batch_size: int = 64
+    eval_batch_size: int = 64
+    num_workers: int = 4
+    pin_memory: bool = True
+    drop_last: bool = False
 
 
-@DATA_PIPELINE.register("default", hydra_defaults=BASE_HYDRA_DEFAULTS)
+@DATA_PIPELINE.register(
+    "default",
+    defaults=[
+        "_self_",
+        {"/dataset@dataset": None},
+        {"/batch_sampler@batch_samplers.train": None},
+        {"/batch_sampler@batch_samplers.evaluation": None},
+    ],
+)
 class AtriaDataPipeline(RepresentationMixin):
     """
     A configurable data pipeline for managing datasets and dataloaders.
@@ -77,28 +86,25 @@ class AtriaDataPipeline(RepresentationMixin):
         _tar_sampling_chunk_size (int): Chunk size for tar-based datasets.
     """
 
+    __hydra_defaults__ = [
+        "_self_",
+        {"/dataset@dataset": None},
+        {"/batch_sampler@batch_samplers.train": None},
+        {"/batch_sampler@batch_samplers.evaluation": None},
+    ]
+
     def __init__(
         self,
         dataset: AtriaDataset,
         data_dir: str | None = None,
+        dataloader_config: DataloaderConfig = DataloaderConfig(
+            train_batch_size=64,
+            eval_batch_size=64,
+            num_workers=4,
+            pin_memory=True,
+            drop_last=False,
+        ),
         preprocess_transforms: DataTransformsDict | None = DataTransformsDict(),
-        runtime_transforms: DataTransformsDict = DataTransformsDict(),
-        allowed_keys: set[str] | None = None,
-        batch_samplers: BatchSamplersDict = BatchSamplersDict(),
-        train_dataloader: partial = partial(
-            auto_dataloader,
-            batch_size=64,
-            num_workers=4,
-            pin_memory=True,
-            drop_last=False,
-        ),
-        evaluation_dataloader: partial = partial(
-            auto_dataloader,
-            batch_size=64,
-            num_workers=4,
-            pin_memory=True,
-            drop_last=False,
-        ),
         use_validation_set_for_test: bool = False,
         use_train_set_for_test: bool = False,
         tar_sampling_chunk_size: int = 1000,
@@ -125,12 +131,10 @@ class AtriaDataPipeline(RepresentationMixin):
 
         Args:
             data_dir (Union[str, Path]): The directory containing the dataset.
-            dataset (partial[AtriaDataset]): Factory function to create the dataset.
             preprocess_transforms (Optional[DataTransformsDict]): Preprocessing transformations to apply to the dataset.
             runtime_transforms (Optional[Union[DataTransformsDict, partial]]): Runtime transformations to apply to the dataset.
             allowed_keys (Optional[list[str]]): List of allowed keys for the dataset.
             storage_enabled (bool): Whether to enable dataset storage.
-            batch_samplers (BatchSamplersDict): Batch samplers for training and evaluation.
             train_dataloader (partial): Builder for the training dataloader.
             evaluation_dataloader (partial): Builder for the evaluation dataloader.
             use_validation_set_for_test (bool): Whether to use the validation set for testing.
@@ -147,17 +151,11 @@ class AtriaDataPipeline(RepresentationMixin):
             dataset_splitting_enabled (bool): Whether to enable dataset splitting.
             split_ratio (float): The ratio of the training split. Defaults to 0.9.
         """
-        self._data_dir = (
-            data_dir or Path(_DEFAULT_ATRIA_DATASETS_CACHE_DIR) / dataset.name
-        )
         self._dataset = dataset
+        self._data_dir = data_dir
         self._preprocess_transforms = preprocess_transforms
-        self._runtime_transforms = runtime_transforms
-        self._allowed_keys = allowed_keys
         self._enable_sharded_storage = enable_sharded_storage
-        self._batch_samplers = batch_samplers
-        self._train_dataloader = train_dataloader
-        self._evaluation_dataloader = evaluation_dataloader
+        self._dataloader_config = dataloader_config
         self._use_validation_set_for_test = use_validation_set_for_test
         self._use_train_set_for_test = use_train_set_for_test
         self._tar_sampling_chunk_size = tar_sampling_chunk_size
@@ -198,6 +196,26 @@ class AtriaDataPipeline(RepresentationMixin):
         elif collate_fn == "mmdet_pseudo_collate":
             self._collate_fn = mmdet_pseudo_collate
 
+        self._train_dataloader = partial(
+            auto_dataloader,
+            batch_size=self._dataloader_config.train_batch_size,
+            num_workers=self._dataloader_config.num_workers,
+            pin_memory=self._dataloader_config.pin_memory,
+            drop_last=self._dataloader_config.drop_last,
+        )
+        self._evaluation_dataloader = partial(
+            auto_dataloader,
+            batch_size=self._dataloader_config.eval_batch_size,
+            num_workers=self._dataloader_config.num_workers,
+            pin_memory=self._dataloader_config.pin_memory,
+            drop_last=self._dataloader_config.drop_last,
+        )
+
+        # intenral param
+        self._batch_samples = None
+        self._preprocess_transforms = None
+        self._dataset = None  # This will be set when the dataset is built
+
     @property
     def dataset_metadata(self):
         """
@@ -211,7 +229,12 @@ class AtriaDataPipeline(RepresentationMixin):
         """
         return self._dataset.metadata
 
-    def build(self, split: DatasetSplitType | None = None) -> "AtriaDataPipeline":
+    def build(
+        self,
+        split: DatasetSplitType | None = None,
+        runtime_transforms: DataTransformsDict = DataTransformsDict(),
+        allowed_keys: set[str] | None = None,
+    ) -> "AtriaDataPipeline":
         """
         Sets up the datasets for training, validation, and testing.
 
@@ -231,29 +254,29 @@ class AtriaDataPipeline(RepresentationMixin):
         ):
             self._dataset.build(
                 split=DatasetSplitType.train,
-                data_dir=str(self._data_dir),
-                runtime_transforms=self._runtime_transforms.train,
+                data_dir=self._data_dir,
+                runtime_transforms=runtime_transforms.train,
                 preprocess_transforms=self._preprocess_transforms.train
                 if self._preprocess_transforms
                 else None,
                 access_token=self._access_token,
                 overwrite_existing_cached=self._overwrite_existing_cached,
                 overwrite_existing_shards=self._overwrite_existing_shards,
-                allowed_keys=self._allowed_keys,
+                allowed_keys=allowed_keys,
                 **self._sharded_storage_kwargs,  # type: ignore
             )
             try:
                 self._dataset.build(
                     split=DatasetSplitType.validation,
-                    data_dir=str(self._data_dir),
-                    runtime_transforms=self._runtime_transforms.evaluation,
+                    data_dir=self._data_dir,
+                    runtime_transforms=runtime_transforms.evaluation,
                     preprocess_transforms=self._preprocess_transforms.evaluation
                     if self._preprocess_transforms
                     else None,
                     access_token=self._access_token,
                     overwrite_existing_cached=self._overwrite_existing_cached,
                     overwrite_existing_shards=self._overwrite_existing_shards,
-                    allowed_keys=self._allowed_keys,
+                    allowed_keys=allowed_keys,
                     **self._sharded_storage_kwargs,  # type: ignore
                 )
             except ValueError as e:
@@ -276,15 +299,15 @@ class AtriaDataPipeline(RepresentationMixin):
         if split == DatasetSplitType.test or split is None:
             self._dataset.build(
                 split=DatasetSplitType.test,
-                data_dir=str(self._data_dir),
-                runtime_transforms=self._runtime_transforms.evaluation,
+                data_dir=self._data_dir,
+                runtime_transforms=runtime_transforms.evaluation,
                 preprocess_transforms=self._preprocess_transforms.evaluation
                 if self._preprocess_transforms
                 else None,
                 access_token=self._access_token,
                 overwrite_existing_cached=self._overwrite_existing_cached,
                 overwrite_existing_shards=self._overwrite_existing_shards,
-                allowed_keys=self._allowed_keys,
+                allowed_keys=allowed_keys,
                 **self._sharded_storage_kwargs,  # type: ignore
             )
             if self._dataset.test is None:

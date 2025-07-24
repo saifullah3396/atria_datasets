@@ -97,18 +97,8 @@ class PubTables1M(AtriaDocumentDataset):
         },
     }
 
-    def __init__(
-        self,
-        task: str = "structure",
-        max_train_samples: int | None = None,
-        max_validation_samples: int | None = None,
-        max_test_samples: int | None = None,
-    ):
-        super().__init__(
-            max_train_samples=max_train_samples,
-            max_validation_samples=max_validation_samples,
-            max_test_samples=max_test_samples,
-        )
+    def __init__(self, task: str = "structure", **kwargs):
+        super().__init__(**kwargs)
         self.task = task
 
     def _download_urls(self) -> list[str]:

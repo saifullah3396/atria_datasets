@@ -10,6 +10,7 @@ from atria_datasets.image_classification.mnist import *  # noqa
 from atria_datasets.layout_analysis.doclaynet import *  # noqa
 from atria_datasets.layout_analysis.icdar2019 import *  # noqa
 from atria_datasets.layout_analysis.publaynet import *  # noqa
+from atria_datasets.pipelines.atria_data_pipeline import *  # noqa
 from atria_datasets.ser.cord import *  # noqa
 from atria_datasets.ser.docbank import *  # noqa
 from atria_datasets.ser.docile import *  # noqa
