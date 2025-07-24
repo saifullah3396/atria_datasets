@@ -121,7 +121,9 @@ class DatasetConfigMixin:
             raise TypeError(
                 f"{self.__class__.__name__} must define a __config_cls__ attribute."
             )
-        init_fields = {k: getattr(self, k) for k in self._config.__class__.model_fields}
+        init_fields = {
+            k: getattr(self._config, k) for k in self._config.__class__.model_fields
+        }
         return OmegaConf.to_container(
             OmegaConf.create(
                 builds(self.__class__, populate_full_signature=True, **init_fields)
