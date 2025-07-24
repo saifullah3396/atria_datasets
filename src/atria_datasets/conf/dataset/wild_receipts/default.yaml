@@ -4,3 +4,4 @@ config_name: default
 max_train_samples: null
 max_validation_samples: null
 max_test_samples: null
+apply_reading_order_correction: true

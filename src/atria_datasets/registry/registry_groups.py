@@ -40,7 +40,7 @@ class DatasetRegistryGroup(RegistryGroup):
         def decorator(decorated_class):
             if not issubclass(decorated_class, AtriaHuggingfaceDataset):
                 configs.append(
-                    AtriaDatasetConfig(
+                    decorated_class.__config_cls__(
                         config_name="default", dataset_name=name, **kwargs
                     )
                 )
@@ -49,15 +49,15 @@ class DatasetRegistryGroup(RegistryGroup):
             ), (
                 f"Expected configs to be a list of AtriaDatasetConfig, got {type(configs)} instead."
             )
-            assert configs, (
-                f"{decorated_class.__name__} must provide at least one configuration in _REGISTRY_CONFIGS."
+            assert len(configs) > 0, (
+                f"{decorated_class.__name__} must provide at least one config."
             )
             for config in configs:
                 config.dataset_name = name
                 self.register_modules(
                     module_paths=decorated_class,
                     module_names=config.dataset_name + "/" + config.config_name,
-                    **config.__dict__,
+                    **{k: getattr(config, k) for k in config.__class__.model_fields},
                     **kwargs,
                 )
             return decorated_class

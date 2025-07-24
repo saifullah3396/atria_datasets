@@ -4,3 +4,5 @@ config_name: default
 max_train_samples: null
 max_validation_samples: null
 max_test_samples: null
+load_ocr: false
+type: default
