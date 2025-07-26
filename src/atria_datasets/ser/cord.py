@@ -206,7 +206,7 @@ class CORD(AtriaDocumentDataset):
             homepage=_HOMEPAGE,
             description=_DESCRIPTION,
             license=_LICENSE,
-            dataset_labels=DatasetLabels(token_classification=_CLASSES),
+            dataset_labels=DatasetLabels(ser=_CLASSES),
         )
 
     def _available_splits(self) -> list[DatasetSplitType]:

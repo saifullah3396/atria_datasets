@@ -216,7 +216,7 @@ class DocBankLER(AtriaDocumentDataset):
             citation=_CITATION,
             license=_LICENSE,
             homepage=_HOMEPAGE,
-            dataset_labels=DatasetLabels(layout=_CLASSES),
+            dataset_labels=DatasetLabels(ser=_CLASSES),
         )
 
     def _available_splits(self) -> list[DatasetSplitType]:
