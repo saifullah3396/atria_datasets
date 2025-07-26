@@ -52,7 +52,8 @@ def auto_dataloader(dataset: Any, **kwargs: Any) -> Any:
     Raises:
         ValueError: If incompatible configurations are detected.
     """
-    from ignite.distributed import DistributedProxySampler, utils as idist
+    from ignite.distributed import DistributedProxySampler
+    from ignite.distributed import utils as idist
     from ignite.distributed.comp_models import xla as idist_xla
     from torch.utils.data import DataLoader, IterableDataset
     from torch.utils.data.distributed import DistributedSampler
@@ -129,9 +130,6 @@ def auto_dataloader(dataset: Any, **kwargs: Any) -> Any:
     else:
         kwargs["pin_memory"] = kwargs.get("pin_memory", "cuda" in idist.device().type)
 
-    kwargs_str = ",\n".join(f"\t{k}={v!r}" for k, v in kwargs.items())
-    print(f"DataLoader(\n{kwargs_str}\n)")
-
     dataloader = DataLoader(dataset, **kwargs)
     if (
         idist.has_xla_support
@@ -188,9 +186,8 @@ def mmdet_pseudo_collate(batch: list["MMDetInput"]):
     Raises:
         ValueError: If the batch is empty or not a list.
     """
-    from mmengine.dataset.utils import pseudo_collate
-
     from atria_datasets.core.transforms.mmdet import MMDetInput
+    from mmengine.dataset.utils import pseudo_collate
 
     return MMDetInput.model_construct(
         **pseudo_collate([sample.model_dump() for sample in batch])

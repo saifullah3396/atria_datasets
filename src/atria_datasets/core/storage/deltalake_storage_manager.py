@@ -34,6 +34,7 @@ License: MIT
 
 import multiprocessing as mp
 import pickle
+import queue
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from pathlib import Path
@@ -237,7 +238,12 @@ class ProducerWorker(mp.Process):
                 break
             try:
                 result = serializer(item)
-                self.output_queue.put(result)
+                while True:
+                    try:
+                        self.output_queue.put(result, timeout=1)
+                        break
+                    except queue.Full:
+                        continue
             except Exception as e:
                 self.output_queue.put(e)
         serializer.close()

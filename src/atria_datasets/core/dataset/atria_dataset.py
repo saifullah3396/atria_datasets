@@ -42,12 +42,11 @@ from atria_core.types import (
     ImageInstance,
 )
 from atria_core.utilities.repr import RepresentationMixin
-from pydantic import BaseModel
-
 from atria_datasets.core.constants import _DEFAULT_DOWNLOAD_PATH
 from atria_datasets.core.dataset.split_iterator import SplitIterator
 from atria_datasets.core.storage.utilities import FileStorageType
 from atria_datasets.core.typing.common import T_BaseDataInstance
+from pydantic import BaseModel
 
 if TYPE_CHECKING:
     pass
@@ -427,7 +426,9 @@ class AtriaDataset(
 
         # Apply runtime transformations
         if runtime_transforms is not None:
-            for split_iterator in self._split_iterators.values():
+            for split, split_iterator in self._split_iterators.items():
+                if self._split is not None and split != self._split:
+                    continue
                 split_iterator.output_transform = runtime_transforms
 
     def upload_to_hub(
@@ -740,6 +741,7 @@ class AtriaDataset(
                 )
                 if not info_saved:
                     self.save_dataset_info(self._storage_dir)
+                    info_saved = True
             else:
                 logger.info(
                     f"Loading cached split {split.value} from {storage_manager.split_dir(split)}"

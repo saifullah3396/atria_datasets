@@ -32,7 +32,8 @@ from atria_core.types import DatasetSplitType
 from atria_core.utilities.repr import RepresentationMixin
 from rich.pretty import pretty_repr
 
-from atria_datasets.core.dataset.atria_dataset import AtriaDataset
+from atria_datasets.core.batch_samplers.batch_samplers_dict import BatchSamplersDict
+from atria_datasets.core.dataset.atria_dataset import AtriaDataset, DatasetLoadingMode
 from atria_datasets.core.dataset_splitters.standard_splitter import StandardSplitter
 from atria_datasets.core.storage.utilities import FileStorageType
 from atria_datasets.pipelines.utilities import (
@@ -57,16 +58,28 @@ class DataloaderConfig:
     pin_memory: bool = True
     drop_last: bool = False
 
+    @property
+    def train_config(self) -> dict:
+        config = {
+            "batch_size": self.train_batch_size,
+            "num_workers": self.num_workers,
+            "pin_memory": self.pin_memory,
+            "drop_last": self.drop_last,
+        }
+        return ", ".join(f"{key}={value}" for key, value in config.items())
 
-@DATA_PIPELINE.register(
-    "default",
-    defaults=[
-        "_self_",
-        {"/dataset@dataset": None},
-        {"/batch_sampler@batch_samplers.train": None},
-        {"/batch_sampler@batch_samplers.evaluation": None},
-    ],
-)
+    @property
+    def eval_config(self) -> dict:
+        config = {
+            "batch_size": self.eval_batch_size,
+            "num_workers": self.num_workers,
+            "pin_memory": self.pin_memory,
+            "drop_last": self.drop_last,
+        }
+        return ", ".join(f"{key}={value}" for key, value in config.items())
+
+
+@DATA_PIPELINE.register("default", defaults=["_self_", {"/dataset@dataset": None}])
 class AtriaDataPipeline(RepresentationMixin):
     """
     A configurable data pipeline for managing datasets and dataloaders.
@@ -78,20 +91,12 @@ class AtriaDataPipeline(RepresentationMixin):
     Attributes:
         _runtime_transforms (Optional[DataTransformsDict]): Runtime transformations to apply to the dataset.
         _storage_enabled (bool): Whether to enable dataset storage.
-        _batch_samplers (BatchSamplersDict): Batch samplers for training and evaluation.
         _train_dataloader (partial): Builder for the training dataloader.
         _evaluation_dataloader (partial): Builder for the evaluation dataloader.
         _use_validation_set_for_test (bool): Whether to use the validation set for testing.
         _use_train_set_for_test (bool): Whether to use the training set for testing.
         _tar_sampling_chunk_size (int): Chunk size for tar-based datasets.
     """
-
-    __hydra_defaults__ = [
-        "_self_",
-        {"/dataset@dataset": None},
-        {"/batch_sampler@batch_samplers.train": None},
-        {"/batch_sampler@batch_samplers.evaluation": None},
-    ]
 
     def __init__(
         self,
@@ -104,6 +109,7 @@ class AtriaDataPipeline(RepresentationMixin):
             pin_memory=True,
             drop_last=False,
         ),
+        batch_samplers: BatchSamplersDict = BatchSamplersDict(),
         preprocess_transforms: DataTransformsDict | None = DataTransformsDict(),
         use_validation_set_for_test: bool = False,
         use_train_set_for_test: bool = False,
@@ -125,6 +131,8 @@ class AtriaDataPipeline(RepresentationMixin):
         overwrite_existing_shards: bool = False,
         # collate_fn
         collate_fn: str = "default_collate",
+        # dataset_load_mode
+        dataset_load_mode: DatasetLoadingMode = DatasetLoadingMode.in_memory,
     ):
         """
         Initializes the DefaultDataPipeline.
@@ -153,12 +161,14 @@ class AtriaDataPipeline(RepresentationMixin):
         """
         self._dataset = dataset
         self._data_dir = data_dir
+        self._batch_samplers = batch_samplers
         self._preprocess_transforms = preprocess_transforms
         self._enable_sharded_storage = enable_sharded_storage
         self._dataloader_config = dataloader_config
         self._use_validation_set_for_test = use_validation_set_for_test
         self._use_train_set_for_test = use_train_set_for_test
         self._tar_sampling_chunk_size = tar_sampling_chunk_size
+        self._dataset_load_mode = dataset_load_mode
 
         self._sharded_storage_kwargs = {}
         if self._enable_sharded_storage:
@@ -202,6 +212,7 @@ class AtriaDataPipeline(RepresentationMixin):
             num_workers=self._dataloader_config.num_workers,
             pin_memory=self._dataloader_config.pin_memory,
             drop_last=self._dataloader_config.drop_last,
+            persistent_workers=self._dataloader_config.num_workers > 0,
         )
         self._evaluation_dataloader = partial(
             auto_dataloader,
@@ -209,12 +220,8 @@ class AtriaDataPipeline(RepresentationMixin):
             num_workers=self._dataloader_config.num_workers,
             pin_memory=self._dataloader_config.pin_memory,
             drop_last=self._dataloader_config.drop_last,
+            persistent_workers=self._dataloader_config.num_workers > 0,
         )
-
-        # intenral param
-        self._batch_samples = None
-        self._preprocess_transforms = None
-        self._dataset = None  # This will be set when the dataset is built
 
     @property
     def dataset_metadata(self):
@@ -263,6 +270,7 @@ class AtriaDataPipeline(RepresentationMixin):
                 overwrite_existing_cached=self._overwrite_existing_cached,
                 overwrite_existing_shards=self._overwrite_existing_shards,
                 allowed_keys=allowed_keys,
+                dataset_load_mode=self._dataset_load_mode,
                 **self._sharded_storage_kwargs,  # type: ignore
             )
             try:
@@ -277,6 +285,7 @@ class AtriaDataPipeline(RepresentationMixin):
                     overwrite_existing_cached=self._overwrite_existing_cached,
                     overwrite_existing_shards=self._overwrite_existing_shards,
                     allowed_keys=allowed_keys,
+                    dataset_load_mode=self._dataset_load_mode,
                     **self._sharded_storage_kwargs,  # type: ignore
                 )
             except ValueError as e:
@@ -308,6 +317,7 @@ class AtriaDataPipeline(RepresentationMixin):
                 overwrite_existing_cached=self._overwrite_existing_cached,
                 overwrite_existing_shards=self._overwrite_existing_shards,
                 allowed_keys=allowed_keys,
+                dataset_load_mode=self._dataset_load_mode,
                 **self._sharded_storage_kwargs,  # type: ignore
             )
             if self._dataset.test is None:
@@ -344,7 +354,6 @@ class AtriaDataPipeline(RepresentationMixin):
             )
         else:
             logger.warning("No labels found in the dataset.")
-
         return self
 
     def train_dataloader(self, shuffle: bool = True, **kwargs) -> "DataLoader":

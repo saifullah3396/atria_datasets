@@ -1,4 +1,5 @@
 _target_: atria_datasets.document_classification.rvlcdip.RvlCdip
+_partial_: false
 dataset_name: rvlcdip
 config_name: default
 max_train_samples: null

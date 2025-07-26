@@ -17,7 +17,11 @@ class DatasetRegistryGroup(RegistryGroup):
     """
 
     def register(
-        self, name: str, configs: list[AtriaDatasetConfig] | None = None, **kwargs
+        self,
+        name: str,
+        configs: list[AtriaDatasetConfig] | None = None,
+        builds_to_file_store: bool = True,
+        **kwargs,
     ):
         """
         Decorator for registering a module with configurations.
@@ -29,18 +33,38 @@ class DatasetRegistryGroup(RegistryGroup):
         Returns:
             function: A decorator function for registering the module with configurations.
         """
-
-        from atria_datasets.core.dataset.atria_dataset import AtriaDatasetConfig
+        from atria_datasets.core.dataset.atria_dataset import (
+            AtriaDataset,
+            AtriaDatasetConfig,
+        )
         from atria_datasets.core.dataset.atria_huggingface_dataset import (
             AtriaHuggingfaceDataset,
         )
 
-        configs = configs or []
+        if builds_to_file_store and not self._file_store_build_enabled:
 
-        def decorator(decorated_class):
-            if not issubclass(decorated_class, AtriaHuggingfaceDataset):
+            def noop_(module):
+                return module
+
+            return noop_
+
+        # get spec params
+        configs = configs or []
+        provider = kwargs.pop("provider", None)
+        is_global_package = kwargs.pop("is_global_package", False)
+        registers_target = kwargs.pop("registers_target", True)
+        defaults = kwargs.pop("defaults", None)
+        assert defaults is None, "Dataset registry does not support defaults."
+
+        def decorator(module):
+            from atria_registry.module_spec import ModuleSpec
+
+            assert issubclass(module, AtriaDataset), (
+                f"Expected {module.__name__} to be a subclass of AtriaDataset, got {type(module)} instead."
+            )
+            if not issubclass(module, AtriaHuggingfaceDataset):
                 configs.append(
-                    decorated_class.__config_cls__(
+                    module.__config_cls__(
                         config_name="default", dataset_name=name, **kwargs
                     )
                 )
@@ -50,16 +74,31 @@ class DatasetRegistryGroup(RegistryGroup):
                 f"Expected configs to be a list of AtriaDatasetConfig, got {type(configs)} instead."
             )
             assert len(configs) > 0, (
-                f"{decorated_class.__name__} must provide at least one config."
+                f"{module.__name__} must provide at least one config."
             )
+
+            # build the module spec
+            module_spec = ModuleSpec(
+                module=module,
+                name=name,
+                group=self.name,
+                provider=provider or self._default_provider,
+                is_global_package=is_global_package,
+                registers_target=registers_target,
+                defaults=defaults,
+            )
+
+            import copy
+
             for config in configs:
                 config.dataset_name = name
-                self.register_modules(
-                    module_paths=decorated_class,
-                    module_names=config.dataset_name + "/" + config.config_name,
-                    **{k: getattr(config, k) for k in config.__class__.model_fields},
-                    **kwargs,
+                config_module_spec = copy.deepcopy(module_spec)
+                config_module_spec.name = config.dataset_name + "/" + config.config_name
+                config_module_spec.model_extra.update(
+                    {k: getattr(config, k) for k in config.__class__.model_fields}
                 )
-            return decorated_class
+                config_module_spec.model_extra.update({**kwargs})
+                self.register_module(config_module_spec)
+            return module
 
         return decorator

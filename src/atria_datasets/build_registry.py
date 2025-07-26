@@ -23,12 +23,7 @@ from atria_datasets.table_extraction.pubtables1m import *  # noqa
 from atria_datasets.vqa.docvqa import *  # noqa
 
 if __name__ == "__main__":
-    import shutil
-
     config_path = Path(__file__).parent / "conf"
-    print("config_path", config_path)
-    if config_path.exists():
-        shutil.rmtree(config_path)
     write_registry_to_yaml(
         config_path, types=["dataset", "data_pipeline", "batch_sampler"]
     )

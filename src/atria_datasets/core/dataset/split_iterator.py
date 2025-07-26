@@ -38,7 +38,6 @@ import rich.pretty
 from atria_core.logger import get_logger
 from atria_core.types import DatasetSplitType
 from atria_core.utilities.repr import RepresentationMixin
-
 from atria_datasets.core.dataset.instance_transform import InstanceTransform
 from atria_datasets.core.typing.common import T_BaseDataInstance
 
