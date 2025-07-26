@@ -42,11 +42,12 @@ from atria_core.types import (
     ImageInstance,
 )
 from atria_core.utilities.repr import RepresentationMixin
+from pydantic import BaseModel, ConfigDict
+
 from atria_datasets.core.constants import _DEFAULT_DOWNLOAD_PATH
 from atria_datasets.core.dataset.split_iterator import SplitIterator
 from atria_datasets.core.storage.utilities import FileStorageType
 from atria_datasets.core.typing.common import T_BaseDataInstance
-from pydantic import BaseModel
 
 if TYPE_CHECKING:
     pass
@@ -77,6 +78,7 @@ class DatasetLoadingMode(str, enum.Enum):
 
 
 class AtriaDatasetConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     dataset_name: str | None = None
     config_name: str = "default"
     max_train_samples: int | None = None
