@@ -275,8 +275,8 @@ class AtriaDataPipeline(RepresentationMixin):
                 self._dataset.build(
                     split=DatasetSplitType.validation,
                     data_dir=self._data_dir,
-                    runtime_transforms=runtime_transforms.evaluation,
-                    preprocess_transforms=self._preprocess_transforms.evaluation
+                    runtime_transforms=runtime_transforms.composed_evaluation,
+                    preprocess_transforms=self._preprocess_transforms.composed_evaluation
                     if self._preprocess_transforms
                     else None,
                     access_token=self._access_token,
@@ -307,8 +307,8 @@ class AtriaDataPipeline(RepresentationMixin):
             self._dataset.build(
                 split=DatasetSplitType.test,
                 data_dir=self._data_dir,
-                runtime_transforms=runtime_transforms.evaluation,
-                preprocess_transforms=self._preprocess_transforms.evaluation
+                runtime_transforms=runtime_transforms.composed_evaluation,
+                preprocess_transforms=self._preprocess_transforms.composed_evaluation
                 if self._preprocess_transforms
                 else None,
                 access_token=self._access_token,

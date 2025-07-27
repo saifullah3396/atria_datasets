@@ -283,35 +283,38 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             username=self.config.username, name=self.config.dataset_name
         )
         self.config.branch = self.config.branch or self._dataset_info.default_branch
+
         available_configs = self._hub.datasets.get_available_configs(
             self._dataset_info.repo_id, branch=self.config.branch
         )
 
         # available configs that start with given config name
-        available_configs = [
-            config
-            for config in available_configs
-            if config.startswith(self.config.config_name)
+        matching_configs = [
+            cfg for cfg in available_configs if cfg.startswith(self.config.config_name)
         ]
 
-        if len(available_configs) == 0:
+        if not matching_configs:
             raise ValueError(
                 f"No configurations found for dataset '{self.config.username}/{self._dataset_info.name}' "
-                f"on branch '{self.config.branch}'. Available configurations: {available_configs}"
+                f"with config name '{self.config.config_name}' on branch '{self.config.branch}'. "
+                f"Available configurations: {available_configs}"
             )
 
-        if len(available_configs) > 1:
-            logger.warning(
+        if len(matching_configs) > 1:
+            raise RuntimeError(
                 f"Multiple configurations found for dataset '{self.config.username}/{self._dataset_info.name}' "
-                f"on branch '{self.config.branch}': {available_configs}. "
+                f"with config name '{self.config.config_name}' on branch '{self.config.branch}': {matching_configs}. "
+                f"Please specify the config name explicitly."
             )
 
-        if len(available_configs) == 1:
+        # Use the matched config if it differs from the original
+        matched_config = matching_configs[0]
+        if matched_config != self.config.config_name:
             logger.info(
-                f"Using single available configuration '{available_configs[0]}' for dataset "
+                f"Using available configuration '{matched_config}' for dataset "
                 f"'{self.config.username}/{self._dataset_info.name}' on branch '{self.config.branch}'."
             )
-            self.config.config_name = available_configs[0]
+            self.config.config_name = matched_config
         return self._dataset_info
 
     # ==================== Path Management ====================
