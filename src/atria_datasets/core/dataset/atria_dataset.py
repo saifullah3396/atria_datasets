@@ -214,14 +214,14 @@ class AtriaDataset(
         if self.config.config_name == self.__default_config_name__:
             self.config.config_name = f"{self.config.config_name}-{self.config_hash}"
 
+        self._config_path = self.__default_config_path__.format(
+            config_name=self.config.config_name
+        )
+
         self._downloaded_files: dict[str, Path] = {}
         self._split_iterators: dict[DatasetSplitType, SplitIterator] = {}
         self._downloads_prepared: bool = False
         self._sharded_splits_prepared: bool = False
-
-        self._config_path = self.__default_config_path__.format(
-            config_name=self.config.config_name
-        )
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -459,10 +459,6 @@ class AtriaDataset(
             if name is None:
                 name = self.config.dataset_name.replace("_", "-")
 
-            logger.info(
-                f"Uploading dataset {self.__class__.__name__} to hub with name {name} and config {branch}."
-            )
-
             def data_model_to_instance_type(
                 data_model: type[T_BaseDataInstance],
             ) -> DataInstanceType:
@@ -483,6 +479,11 @@ class AtriaDataset(
                 data_instance_type=data_model_to_instance_type(self.data_model),
                 is_public=is_public,
             )
+
+            logger.info(
+                f"Uploading dataset to hub with name {hub.auth.username}/{name} "
+                f"on branch {branch} and config_name {self.config.config_name}."
+            )
             hub.datasets.upload_files(
                 dataset=dataset,
                 branch=branch,
@@ -494,11 +495,13 @@ class AtriaDataset(
                 f"Dataset {name} uploaded successfully to branch {branch}. "
                 f"You can load it with name '{hub.auth.username}/{name}' and config_name '{self.config.config_name}'."
             )
-        except ImportError:
-            raise ImportError(
-                "The 'atria_hub' package is required to upload datasets to the hub. "
-                "Please install it using 'uv add https://github.com/saifullah3396/atria_hub'."
-            )
+        except ImportError as e:
+            if e.path.startswith("atria_hub"):
+                raise ImportError(
+                    "The 'atria_hub' package is required to load datasets from the hub. "
+                    "Please install it using 'uv add https://github.com/saifullah3396/atria_hub'."
+                )
+            raise e
         except Exception as e:
             logger.error(f"Failed to upload dataset to hub: {e}")
             raise

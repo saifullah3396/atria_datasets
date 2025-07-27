@@ -186,7 +186,6 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             shard_storage_type=shard_storage_type,
             **sharded_storage_kwargs,
         )
-
         return cast(AtriaHubDataset[T_BaseDataInstance], dataset)
 
     @classmethod
@@ -195,7 +194,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         Validate and parse dataset name format.
 
         Args:
-            name: Dataset name in format 'username/dataset_name' or 'username/dataset_name/branch'
+            name: Dataset name in format 'username/dataset_name'
 
         Returns:
             tuple: (username, dataset_name, branch) where branch can be None
@@ -284,14 +283,35 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             username=self.config.username, name=self.config.dataset_name
         )
         self.config.branch = self.config.branch or self._dataset_info.default_branch
-        self._repo_path = f"lakefs://{self._dataset_info.repo_id}/{self.config.branch}"
         available_configs = self._hub.datasets.get_available_configs(
             self._dataset_info.repo_id, branch=self.config.branch
         )
-        assert self.config.config_name in available_configs, (
-            f"Configuration '{self.config.config_name}' not found in dataset '{self.config.username}/{self._dataset_info.name}' "
-            f"on branch '{self.config.branch}'. Available configurations: {available_configs}"
-        )
+
+        # available configs that start with given config name
+        available_configs = [
+            config
+            for config in available_configs
+            if config.startswith(self.config.config_name)
+        ]
+
+        if len(available_configs) == 0:
+            raise ValueError(
+                f"No configurations found for dataset '{self.config.username}/{self._dataset_info.name}' "
+                f"on branch '{self.config.branch}'. Available configurations: {available_configs}"
+            )
+
+        if len(available_configs) > 1:
+            logger.warning(
+                f"Multiple configurations found for dataset '{self.config.username}/{self._dataset_info.name}' "
+                f"on branch '{self.config.branch}': {available_configs}. "
+            )
+
+        if len(available_configs) == 1:
+            logger.info(
+                f"Using single available configuration '{available_configs[0]}' for dataset "
+                f"'{self.config.username}/{self._dataset_info.name}' on branch '{self.config.branch}'."
+            )
+            self.config.config_name = available_configs[0]
         return self._dataset_info
 
     # ==================== Path Management ====================

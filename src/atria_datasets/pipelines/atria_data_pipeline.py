@@ -260,8 +260,8 @@ class AtriaDataPipeline(RepresentationMixin):
             self._dataset.build(
                 split=DatasetSplitType.train,
                 data_dir=self._data_dir,
-                runtime_transforms=runtime_transforms.train,
-                preprocess_transforms=self._preprocess_transforms.train
+                runtime_transforms=runtime_transforms.composed_train,
+                preprocess_transforms=self._preprocess_transforms.composed_train
                 if self._preprocess_transforms
                 else None,
                 access_token=self._access_token,
