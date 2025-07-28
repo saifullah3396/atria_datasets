@@ -213,6 +213,7 @@ class LocalDeltalakeReader(DeltalakeReader):
         delta = DeltaTable(self.path, storage_options=self.storage_options)
         file_uris = delta.file_uris()
         if file_uris[0].startswith("lakefs://"):
+            # set AWS_EC2_METADATA_DISABLED to improve load time of s3fs see https://github.com/apache/arrow/issues/37136
             filesystem = S3FileSystem(
                 endpoint_override=self.storage_options["AWS_ENDPOINT"],
                 access_key=self.storage_options["AWS_ACCESS_KEY_ID"],
