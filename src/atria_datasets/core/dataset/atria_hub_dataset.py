@@ -22,9 +22,11 @@ Version: 1.0.0
 License: MIT
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable, Generator, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from atria_core.logger import get_logger
 from atria_core.types import (
@@ -34,7 +36,6 @@ from atria_core.types import (
     SplitConfig,
 )
 from atria_core.types.datasets.metadata import DatasetMetadata
-
 from atria_datasets.core.dataset.atria_dataset import (
     AtriaDataset,
     AtriaDatasetConfig,
@@ -96,7 +97,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
     __abstract__ = True
     __config_cls__ = AtriaHubDatasetConfig
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, hub: AtriaHub | None = None, **kwargs) -> None:
         """
         Initialize the AtriaHubDataset.
 
@@ -113,7 +114,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         super().__init__(**kwargs)
 
         # Initialize hub connection and dataset info
-        self._hub = self._initialize_hub()
+        self._hub = hub or self._initialize_hub()
         self._dataset_info = self._initialize_dataset_info()
 
     @classmethod
@@ -130,8 +131,9 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         overwrite_existing_shards: bool = False,
         allowed_keys: set[str] | None = None,
         shard_storage_type: FileStorageType | None = None,
+        hub: AtriaHub | None = None,
         **sharded_storage_kwargs,
-    ) -> "AtriaHubDataset[T_BaseDataInstance]":
+    ) -> Self:
         """
         Load a dataset from the Atria Hub.
 
@@ -174,6 +176,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             dataset_name=dataset_name,
             branch=branch,
             config_name=config_name,
+            hub=hub,
         )
         dataset.build(
             data_dir=data_dir,
@@ -186,7 +189,7 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
             shard_storage_type=shard_storage_type,
             **sharded_storage_kwargs,
         )
-        return cast(AtriaHubDataset[T_BaseDataInstance], dataset)
+        return cast(AtriaHubDataset[T_BaseDataInstance], dataset), dataset._dataset_info
 
     @classmethod
     def _validate_dataset_name(cls, name: str) -> tuple[str, str, str | None]:
@@ -273,9 +276,6 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
         Returns:
             DatasetInfo: Dataset metadata and information
         """
-        from atriax_client.models.dataset import (
-            Dataset as DatasetInfo,  # type: ignore[import-not-found]
-        )
 
         if self.config.username is None:
             self.config.username = self._hub.auth.username
@@ -482,7 +482,6 @@ class AtriaHubDataset(AtriaDataset[T_BaseDataInstance]):
                 config_name=self.config.config_name,
                 split=split.value,
             )
-            logger.info(f"Streaming dataset split {split.value} from {path}")
             return DeltalakeReader.from_mode(
                 mode=self._dataset_load_mode,
                 table_path=path,
