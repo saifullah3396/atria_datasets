@@ -63,11 +63,12 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
         input_transform: Callable | None = None,
         output_transform: Callable | None = None,
         max_len: int | None = None,
+        subset_indices: list[int] | None = None,
     ):
         self._split = split
         self._base_iterator = base_iterator
         self._max_len = max_len
-        self._subset_indices: list[int] | None = None
+        self._subset_indices = subset_indices
         self._tf = InstanceTransform(
             input_transform=input_transform,
             data_model=data_model,
@@ -145,7 +146,7 @@ class SplitIterator(Sequence[T_BaseDataInstance], RepresentationMixin):
 
     def __iter__(self) -> Iterator[T_BaseDataInstance]:
         try:
-            if self._is_iterable:
+            if not self._supports_indexing:
                 if self._subset_indices is not None:
                     raise RuntimeError(
                         "You are trying to iterate over a subset of the dataset, "
