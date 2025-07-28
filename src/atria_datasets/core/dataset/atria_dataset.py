@@ -42,12 +42,11 @@ from atria_core.types import (
     ImageInstance,
 )
 from atria_core.utilities.repr import RepresentationMixin
-from pydantic import BaseModel, ConfigDict
-
 from atria_datasets.core.constants import _DEFAULT_DOWNLOAD_PATH
 from atria_datasets.core.dataset.split_iterator import SplitIterator
 from atria_datasets.core.storage.utilities import FileStorageType
 from atria_datasets.core.typing.common import T_BaseDataInstance
+from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
     pass
@@ -577,7 +576,7 @@ class AtriaDataset(
             """Write data to YAML file, creating directories as needed."""
             file_path.parent.mkdir(parents=True, exist_ok=True)
             with open(file_path, "w") as f:
-                yaml.dump(data, f, default_flow_style=False)
+                yaml.dump(data, f, sort_keys=False)
 
         # Save configuration
         config_file_path = Path(storage_dir) / self._config_path
