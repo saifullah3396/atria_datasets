@@ -119,8 +119,10 @@ class SplitIterator:
                 self.data_dir / "MSCOCO_Format_Annotation/500K_valid.json"
             )
 
-        self.image_base_dir = self.data_dir / "DocBank_500K_ori_img/"
-        self.annotation_base_dir = self.data_dir / "DocBank_500K_txt/"
+        self.image_base_dir = (
+            self.data_dir / "DocBank_500K_ori_img/DocBank_500K_ori_img/"
+        )
+        self.annotation_base_dir = self.data_dir / "DocBank_500K_txt/DocBank_500K_txt/"
 
         with open(self.split_filepath) as f:
             logger.info(f"Loading split data from {self.split_filepath}")
@@ -171,6 +173,11 @@ class SplitIterator:
     def __iter__(self) -> Generator[DocumentInstance, None, None]:
         for idx in range(len(self.split_data["images"])):
             image_file_path = self.split_data["images"][idx]["file_name"]
+            if not (self.image_base_dir / image_file_path).exists():
+                logger.warning(
+                    f"Image file {image_file_path} does not exist in {self.image_base_dir}"
+                )
+                continue
             text_file = self.annotation_base_dir / (
                 image_file_path.replace("_ori.jpg", "") + ".txt"
             )
