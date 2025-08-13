@@ -64,7 +64,9 @@ class InstanceTransform:
         if data_instance.index is None:
             data_instance.index = index
 
+        data_instance.load()
+
         # yield the transformed data instance if output transform is enabled
         if self._output_transform is not None:
-            return self._output_transform(data_instance)
+            data_instance = self._output_transform(data_instance)
         return data_instance
