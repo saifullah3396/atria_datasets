@@ -12,7 +12,7 @@
         "**/**.htmlcov": true,
         "**/**.ruff_cache": true,
         "**/**.coverage": true,
-        "**/**.gitignore": true,
+        "**/**.gitignore": false,
         "**/**.gitmodules": false,
         "**/**uv.lock": true,
         ".copilot-docstring-instructions.md": true,
