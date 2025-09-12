@@ -208,7 +208,13 @@ class SplitIterator:
             max_train_samples=1000,
             max_validation_samples=1000,
             max_test_samples=1000,
-        )
+        ),
+        DocBankConfig(
+            config_name="0.1k",
+            max_train_samples=100,
+            max_validation_samples=100,
+            max_test_samples=100,
+        ),
     ],
 )
 class DocBankLER(AtriaDocumentDataset):

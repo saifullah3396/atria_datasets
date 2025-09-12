@@ -2,7 +2,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 declare -a small_datasets=(
-    "cifar10/1k" # tested done
+    # "cifar10/1k" # tested done
     # "huggingface_cifar10/plain_text_1k" # tested done
     # "mnist/mnist_1k" # tested done
     # "tobacco3482/image_with_ocr" # tested done
@@ -16,7 +16,7 @@ declare -a small_datasets=(
     # "icdar2019/trackA_modern" # tested done
     # "icdar2013/default" # tested done
     # "docvqa/default" 
-    # "docbank/1k"  # too big, failing downloads
+    "docbank/0.1k"  # too big, failing downloads
 )
 
 
@@ -32,16 +32,16 @@ declare -a big_datasets=(
 
 if [[ "$1" == "small_datasets" ]]; then
     for dataset_entry in "${small_datasets[@]}"; do
-        echo "Processing dataset: $name with config: $config"
+        echo "Processing dataset: $name with config: $config and args: ${@:2}"
         uv run python -m atria_datasets.prepare_dataset $dataset_entry ${@:2} --upload_to_hub=True
     done
 elif [[ "$1" == "big_datasets" ]]; then
     for dataset_entry in "${big_datasets[@]}"; do
-        echo "Processing dataset: $name with config: $config"
+        echo "Processing dataset: $name with config: $config and args: ${@:2}"
         uv run python -m atria_datasets.prepare_dataset $dataset_entry ${@:2} --upload_to_hub=True
     done
 else
     dataset_entry="$1"
-    echo "Processing dataset: $name with config: $config"
+    echo "Processing dataset: $name with config: $config and args: ${@:2}"
     uv run python -m atria_datasets.prepare_dataset $dataset_entry ${@:2} --upload_to_hub=True
 fi

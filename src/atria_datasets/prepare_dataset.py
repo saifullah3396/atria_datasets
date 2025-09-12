@@ -8,6 +8,7 @@ logger = get_logger(__name__)
 
 def main(
     name: str,
+    data_dir: str | None = None,
     access_token: str | None = None,
     overwrite_existing_cached: bool = False,
     overwrite_existing_shards: bool = False,
@@ -19,16 +20,17 @@ def main(
 
     dataset = AtriaDataset.load_from_registry(
         name=name,
+        data_dir=data_dir,
         overwrite_existing_cached=overwrite_existing_cached,
         overwrite_existing_shards=overwrite_existing_shards,
         access_token=access_token,
         num_processes=num_processes,
         dataset_load_mode=DatasetLoadingMode.in_memory,
-        build_kwargs={
-            "max_train_samples": 10,
-            "max_validation_samples": 10,
-            "max_test_samples": 10,
-        },
+        # build_kwargs={
+        #     "max_train_samples": 10,
+        #     "max_validation_samples": 10,
+        #     "max_test_samples": 10,
+        # },
     )
     logger.info(f"Loaded dataset:\n{dataset}")
     for sample in dataset.train:

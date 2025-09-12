@@ -173,3 +173,4 @@ cython_debug/
 .vscode/PythonImportHelper-v2-Completion.json
 tmp/
 test.py
+data_dir/
